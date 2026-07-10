@@ -121,11 +121,11 @@ class TermuxManager(private val context: Context) {
         val binDir = File(prefixDir, "bin")
         binDir.mkdirs()
 
-        val requiredBinaries = listOf("libproot-xed.so", "libproot.so", "libtalloc.so", "opencode-server")
+        val requiredBinaries = listOf("libproot-xed.so", "libproot.so", "libtalloc.so")
         val allExist = requiredBinaries.all { File(binDir, it).exists() }
 
         if (!allExist) {
-            log("Extracting binaries from APK...")
+            log("Extracting proot binaries from APK...")
             try {
                 val apk = java.util.zip.ZipFile(context.applicationInfo.sourceDir)
                 val entries = apk.entries()
@@ -133,8 +133,7 @@ class TermuxManager(private val context: Context) {
                     val entry = entries.nextElement()
                     if (entry.name.startsWith("lib/arm64-v8a/")) {
                         val soName = entry.name.substringAfterLast("/")
-                        if (soName == "libproot-xed.so" || soName == "libproot.so" ||
-                            soName == "libtalloc.so" || soName == "opencode-server") {
+                        if (soName == "libproot-xed.so" || soName == "libproot.so" || soName == "libtalloc.so") {
                             val outFile = File(binDir, soName)
                             apk.getInputStream(entry).use { input ->
                                 FileOutputStream(outFile).use { output ->
@@ -150,25 +149,28 @@ class TermuxManager(private val context: Context) {
             } catch (e: Exception) {
                 logErr("Failed to extract binaries: ${e.message}")
             }
+        } else {
+            log("Proot binaries already extracted")
+        }
 
-            // Extract opencode-server from assets if not found in jniLibs
-            if (!File(binDir, "opencode-server").exists()) {
-                log("Extracting opencode-server from assets...")
-                try {
-                    context.assets.open("opencode-server").use { input ->
-                        val outFile = File(binDir, "opencode-server")
-                        FileOutputStream(outFile).use { output ->
-                            input.copyTo(output)
-                        }
-                        outFile.setExecutable(true)
-                        log("Extracted opencode-server from assets (${outFile.length()} bytes)")
+        // Always re-extract opencode-server from assets (check by size)
+        val expectedSize = 103_000_000L
+        val serverFile = File(binDir, "opencode-server")
+        if (!serverFile.exists() || serverFile.length() < expectedSize) {
+            log("Extracting opencode-server from assets...")
+            try {
+                context.assets.open("opencode-server").use { input ->
+                    FileOutputStream(serverFile).use { output ->
+                        input.copyTo(output)
                     }
-                } catch (e: Exception) {
-                    logErr("Failed to extract opencode-server from assets: ${e.message}")
+                    serverFile.setExecutable(true)
+                    log("Extracted opencode-server (${serverFile.length()} bytes)")
                 }
+            } catch (e: Exception) {
+                logErr("Failed to extract opencode-server: ${e.message}")
             }
         } else {
-            log("Binaries already extracted")
+            log("opencode-server already extracted (${serverFile.length()} bytes)")
         }
 
         val libtalloc2 = File(binDir, "libtalloc.so.2")
