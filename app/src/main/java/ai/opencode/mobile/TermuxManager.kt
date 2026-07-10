@@ -19,6 +19,7 @@ class TermuxManager(private val context: Context) {
     var onReady: (() -> Unit)? = null
     var onError: ((String) -> Unit)? = null
     private var serverReady = false
+    private var serverPort = 0
     private var lastTextLen = 0
 
     private val TAG = "TermuxManager"
@@ -38,6 +39,9 @@ class TermuxManager(private val context: Context) {
     }
 
     fun isRunning(): Boolean = terminalSession != null
+    fun isServerReady(): Boolean = serverReady
+    fun getServerPort(): Int = serverPort
+    fun getServerUrl(): String = "http://127.0.0.1:$serverPort"
 
     fun start(projectPath: String) {
         if (isRunning()) return
@@ -112,30 +116,25 @@ class TermuxManager(private val context: Context) {
         resolvConf.writeText("nameserver 8.8.8.8\nnameserver 8.8.4.4\n")
         log("Created /etc/resolv.conf with Google DNS")
 
-        val libtalloc2 = File(prefixDir, "bin/libtalloc.so.2")
-        try { libtalloc2.delete() } catch (_: Exception) {}
-        try {
-            Os.symlink("libtalloc.so", libtalloc2.absolutePath)
-            log("Created libtalloc.so.2 symlink -> libtalloc.so")
-        } catch (e: Exception) {
-            logErr("Failed to create symlink: ${e.message}")
-        }
-
-        // Copy proot binaries to PREFIX/bin so SELinux allows execution
+        // Copy proot binaries + opencode-server to PREFIX/bin so SELinux allows execution
         // Android only extracts shared libs to nativeLibDir, not PIE executables
         val binDir = File(prefixDir, "bin")
         binDir.mkdirs()
-        val extractedMarker = File(prefixDir, ".proot_extracted")
-        if (!extractedMarker.exists()) {
-            log("Extracting proot binaries from APK...")
+
+        val requiredBinaries = listOf("libproot-xed.so", "libproot.so", "libtalloc.so", "opencode-server")
+        val allExist = requiredBinaries.all { File(binDir, it).exists() }
+
+        if (!allExist) {
+            log("Extracting binaries from APK...")
             try {
                 val apk = java.util.zip.ZipFile(context.applicationInfo.sourceDir)
                 val entries = apk.entries()
                 while (entries.hasMoreElements()) {
                     val entry = entries.nextElement()
-                    if (entry.name.startsWith("lib/arm64-v8a/") && entry.name.endsWith(".so")) {
+                    if (entry.name.startsWith("lib/arm64-v8a/")) {
                         val soName = entry.name.substringAfterLast("/")
-                        if (soName == "libproot-xed.so" || soName == "libproot.so" || soName == "libtalloc.so") {
+                        if (soName == "libproot-xed.so" || soName == "libproot.so" ||
+                            soName == "libtalloc.so" || soName == "opencode-server") {
                             val outFile = File(binDir, soName)
                             apk.getInputStream(entry).use { input ->
                                 FileOutputStream(outFile).use { output ->
@@ -148,12 +147,37 @@ class TermuxManager(private val context: Context) {
                     }
                 }
                 apk.close()
-                extractedMarker.writeText("done")
             } catch (e: Exception) {
-                logErr("Failed to extract proot: ${e.message}")
+                logErr("Failed to extract binaries: ${e.message}")
+            }
+
+            // Extract opencode-server from assets if not found in jniLibs
+            if (!File(binDir, "opencode-server").exists()) {
+                log("Extracting opencode-server from assets...")
+                try {
+                    context.assets.open("opencode-server").use { input ->
+                        val outFile = File(binDir, "opencode-server")
+                        FileOutputStream(outFile).use { output ->
+                            input.copyTo(output)
+                        }
+                        outFile.setExecutable(true)
+                        log("Extracted opencode-server from assets (${outFile.length()} bytes)")
+                    }
+                } catch (e: Exception) {
+                    logErr("Failed to extract opencode-server from assets: ${e.message}")
+                }
             }
         } else {
-            log("Proot binaries already extracted")
+            log("Binaries already extracted")
+        }
+
+        val libtalloc2 = File(binDir, "libtalloc.so.2")
+        try { libtalloc2.delete() } catch (_: Exception) {}
+        try {
+            Os.symlink("libtalloc.so", libtalloc2.absolutePath)
+            log("Created libtalloc.so.2 symlink -> libtalloc.so")
+        } catch (e: Exception) {
+            logErr("Failed to create symlink: ${e.message}")
         }
 
         log("Alpine setup complete")
@@ -188,6 +212,16 @@ class TermuxManager(private val context: Context) {
                         newText.lines().forEach { line ->
                             if (line.isNotBlank()) {
                                 log("TERM: $line")
+                                // Detect server ready from opencode-server output
+                                if (line.contains("opencode-server listening on")) {
+                                    serverReady = true
+                                    // Extract port from line like "opencode-server listening on http://0.0.0.0:4096"
+                                    val portMatch = Regex(":(\\d+)").find(line)
+                                    serverPort = portMatch?.groupValues?.get(1)?.toIntOrNull() ?: 4096
+                                    log("=== SERVER READY on port $serverPort ===")
+                                    onReady?.invoke()
+                                }
+                                // Also detect old format for compatibility
                                 if (line.contains("OpenCode server started")) {
                                     serverReady = true
                                     log("=== SERVER READY ===")
@@ -231,7 +265,6 @@ class TermuxManager(private val context: Context) {
             "mkdir -p $P/tmp 2>/dev/null && " +
             "export PROOT_LOADER=$P/bin/libproot.so && " +
             "export PROOT=$P/bin/libproot-xed.so && " +
-            "ls -la $P/bin/libproot-xed.so 2>&1 && " +
             "echo [SANDBOX] PROOT=$P/bin/libproot-xed.so && " +
             "echo [SANDBOX] PROOT_LOADER=$P/bin/libproot.so && " +
             "echo [SANDBOX] Starting proot... && " +
@@ -241,7 +274,14 @@ class TermuxManager(private val context: Context) {
             "-b /dev/urandom:/dev/random -b /proc -b /sys " +
             "-b $P -b $N -b $P/alpine/tmp:/dev/shm " +
             "-r $P/alpine -0 --link2symlink --sysvipc -L " +
-            "/bin/sh -c 'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin; export HOME=/root; export TERM=xterm-256color; apk update && apk add bash git nodejs npm curl 2>&1 | tail -5; echo [ALPINE] Starting bash...; exec /bin/bash --rcfile /etc/profile -i'"
+            "/bin/sh -c 'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:$P/bin; " +
+            "export HOME=/root; export TERM=xterm-256color; " +
+            "echo [ALPINE] Installing packages...; " +
+            "apk update >/dev/null 2>&1 && apk add --no-cache bash git nodejs npm curl >/dev/null 2>&1; " +
+            "echo [ALPINE] Starting opencode-server...; " +
+            "chmod +x $P/bin/opencode-server 2>/dev/null; " +
+            "OPENCODE_HOST=0.0.0.0 OPENCODE_PORT=0 $P/bin/opencode-server & " +
+            "exec /bin/bash --rcfile /etc/profile -i'"
 
         log("CMD: $cmd")
         session.write(cmd + "\n")
