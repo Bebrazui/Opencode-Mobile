@@ -1,0 +1,359 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF0D1117">
+
+    <WebView
+        android:id="@+id/webview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/splash_screen"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="visible"
+        android:fitsSystemWindows="true"
+        android:padding="0dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:paddingHorizontal="32dp"
+            android:paddingTop="64dp"
+            android:paddingBottom="16dp">
+
+            <ImageView
+                android:layout_width="80dp"
+                android:layout_height="80dp"
+                android:src="@mipmap/ic_launcher"
+                android:contentDescription="@string/app_name" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/app_name"
+                android:textColor="#FFFFFFFF"
+                android:textSize="24sp"
+                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:id="@+id/status_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Initializing..."
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="28dp"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:id="@+id/step_extract"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingVertical="6dp">
+                    <ProgressBar
+                        android:id="@+id/step_extract_progress"
+                        style="?android:attr/progressBarStyleSmall"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:indeterminateTint="#FF58A6FF" />
+                    <TextView
+                        android:id="@+id/step_extract_icon"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:gravity="center"
+                        android:textSize="14sp"
+                        android:textColor="#58A6FF"
+                        android:visibility="gone" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:text="Extract Alpine rootfs"
+                        android:textColor="#8B949E"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif" />
+                    <TextView
+                        android:id="@+id/step_extract_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="pending"
+                        android:textColor="#484F58"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/step_bun"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingVertical="6dp">
+                    <ProgressBar
+                        android:id="@+id/step_bun_progress"
+                        style="?android:attr/progressBarStyleSmall"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:indeterminateTint="#FF58A6FF"
+                        android:visibility="gone" />
+                    <TextView
+                        android:id="@+id/step_bun_icon"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:gravity="center"
+                        android:textSize="14sp"
+                        android:textColor="#58A6FF"
+                        android:visibility="gone" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:text="Setup musl environment"
+                        android:textColor="#484F58"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif" />
+                    <TextView
+                        android:id="@+id/step_bun_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="#484F58"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/step_opencode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingVertical="6dp">
+                    <ProgressBar
+                        android:id="@+id/step_opencode_progress"
+                        style="?android:attr/progressBarStyleSmall"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:indeterminateTint="#FF58A6FF"
+                        android:visibility="gone" />
+                    <TextView
+                        android:id="@+id/step_opencode_icon"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:gravity="center"
+                        android:textSize="14sp"
+                        android:textColor="#58A6FF"
+                        android:visibility="gone" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:text="Enter Alpine"
+                        android:textColor="#484F58"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif" />
+                    <TextView
+                        android:id="@+id/step_opencode_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="#484F58"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/step_install"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingVertical="6dp">
+                    <ProgressBar
+                        android:id="@+id/step_install_progress"
+                        style="?android:attr/progressBarStyleSmall"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:indeterminateTint="#FF58A6FF"
+                        android:visibility="gone" />
+                    <TextView
+                        android:id="@+id/step_install_icon"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:gravity="center"
+                        android:textSize="14sp"
+                        android:textColor="#58A6FF"
+                        android:visibility="gone" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:text="Install dependencies"
+                        android:textColor="#484F58"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif" />
+                    <TextView
+                        android:id="@+id/step_install_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="#484F58"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/step_server"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingVertical="6dp">
+                    <ProgressBar
+                        android:id="@+id/step_server_progress"
+                        style="?android:attr/progressBarStyleSmall"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:indeterminateTint="#FF58A6FF"
+                        android:visibility="gone" />
+                    <TextView
+                        android:id="@+id/step_server_icon"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:gravity="center"
+                        android:textSize="14sp"
+                        android:textColor="#58A6FF"
+                        android:visibility="gone" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:text="Start server"
+                        android:textColor="#484F58"
+                        android:textSize="13sp"
+                        android:fontFamily="sans-serif" />
+                    <TextView
+                        android:id="@+id/step_server_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="#484F58"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/detail_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text=""
+                android:textColor="#6E7681"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1.2"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingBottom="16dp">
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#FF21262D" />
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/log_background"
+                android:padding="2dp">
+
+                <ScrollView
+                    android:id="@+id/log_scroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:fillViewport="true">
+
+                    <TextView
+                        android:id="@+id/log_text"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="10dp"
+                        android:text=""
+                        android:textColor="#FF7EE787"
+                        android:textSize="10.5sp"
+                        android:fontFamily="monospace"
+                        android:textIsSelectable="true"
+                        android:lineSpacingExtra="2dp" />
+                </ScrollView>
+            </FrameLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="end"
+                android:layout_marginTop="8dp">
+
+                <TextView
+                    android:id="@+id/copy_logs_btn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:gravity="center"
+                    android:paddingHorizontal="16dp"
+                    android:text="Copy logs"
+                    android:textColor="#FF58A6FF"
+                    android:textSize="12sp"
+                    android:background="@drawable/btn_border"
+                    android:layout_marginEnd="8dp"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <TextView
+                    android:id="@+id/retry_btn"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:gravity="center"
+                    android:paddingHorizontal="16dp"
+                    android:text="Retry"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="12sp"
+                    android:background="@drawable/btn_filled"
+                    android:visibility="gone"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+</FrameLayout>
