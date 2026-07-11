@@ -8,8 +8,9 @@ import androidx.annotation.NonNull
 import androidx.annotation.Nullable
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
-import kotlinx.coroutines.*
 import java.io.*
+import java.util.zip.GZIPInputStream
+import kotlinx.coroutines.*
 
 class TermuxManager(private val context: Context) {
 
@@ -112,24 +113,13 @@ class TermuxManager(private val context: Context) {
         File(prefixDir, "tmp").mkdirs()
 
         val needsReextract = !File(alpineDir, "bin/busybox").exists() ||
-            !File(alpineDir, "usr/bin/node").exists() ||
-            !File(alpineDir, "usr/bin/git").exists() ||
-            !File(alpineDir, "usr/bin/npm").exists()
+            !File(alpineDir, "bin/busybox").exists() ||
+            !File(alpineDir, "etc/resolv.conf").exists()
         if (needsReextract) {
             log("Extracting alpine.rootfs from assets (new version detected)...")
             try {
                 context.assets.open("alpine.rootfs").use { input ->
-                    val tmpFile = File(context.cacheDir, "alpine.rootfs")
-                    FileOutputStream(tmpFile).use { output ->
-                        input.copyTo(output)
-                    }
-                    val process = ProcessBuilder("tar", "xzf", tmpFile.absolutePath, "-C", alpineDir.absolutePath)
-                        .redirectErrorStream(true)
-                        .start()
-                    process.inputStream.bufferedReader().readText()
-                    val exitCode = process.waitFor()
-                    log("tar exit=$exitCode")
-                    tmpFile.delete()
+                    extractTarGz(input, alpineDir)
                 }
                 log("Rootfs extracted to $alpineDir")
             } catch (e: Exception) {
@@ -346,6 +336,90 @@ class TermuxManager(private val context: Context) {
     fun getLogText(): String = try {
         if (logFile.exists()) logFile.readText() else ""
     } catch (_: Exception) { "" }
+
+    private fun extractTarGz(inputStream: InputStream, destDir: File) {
+        GZIPInputStream(inputStream).use { gz ->
+            val block = ByteArray(512)
+            while (true) {
+                var read = 0
+                while (read < 512) {
+                    val n = gz.read(block, read, 512 - read)
+                    if (n == -1) return
+                    read += n
+                }
+                if (block.all { it == 0.toByte() }) break
+
+                val nameEnd = block.indexOf(0.toByte(), 0, 100)
+                val name = String(block, 0, if (nameEnd >= 0) nameEnd else 100)
+                val sizeStr = String(block, 124, 12).trim { it <= ' ' }
+                val size = sizeStr.toLongOrNull(8) ?: 0
+                val typeFlag = block[156].toInt().toChar()
+                val linkEnd = block.indexOf(0.toByte(), 157, 257)
+                val linkName = if (linkEnd > 157) String(block, 157, linkEnd - 157) else ""
+                val modeStr = String(block, 100, 8).trim { it <= ' ' }
+                val mode = modeStr.toLongOrNull(8) ?: 0x1FD
+
+                if (typeFlag == 'x' || typeFlag == 'X' || typeFlag == 'L') {
+                    if (size > 0) skipBytes(gz, size)
+                    continue
+                }
+
+                if (typeFlag == '5' || typeFlag == '4') {
+                    File(destDir, name).mkdirs()
+                    continue
+                }
+
+                if (typeFlag == '2') {
+                    val f = File(destDir, name)
+                    f.parentFile?.mkdirs()
+                    try { Os.symlink(linkName, f.absolutePath) } catch (_: Exception) {}
+                    if (size > 0) skipBytes(gz, size)
+                    continue
+                }
+
+                if (typeFlag == '1') {
+                    val f = File(destDir, name)
+                    f.parentFile?.mkdirs()
+                    try { File(destDir, linkName).copyTo(f, true) } catch (_: Exception) {}
+                    if (size > 0) skipBytes(gz, size)
+                    continue
+                }
+
+                val outFile = File(destDir, name)
+                outFile.parentFile?.mkdirs()
+                if (size > 0) {
+                    FileOutputStream(outFile).use { out ->
+                        var remaining = size
+                        val buf = ByteArray(8192)
+                        while (remaining > 0) {
+                            val n = gz.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+                            if (n == -1) break
+                            out.write(buf, 0, n)
+                            remaining -= n
+                        }
+                    }
+                }
+                if (mode != 0L) {
+                    try {
+                        outFile.setReadable((mode and 0x100) != 0L, true)
+                        outFile.setWritable((mode and 0x80) != 0L, true)
+                        outFile.setExecutable((mode and 0x40) != 0L, true)
+                    } catch (_: Exception) {}
+                }
+                skipBytes(gz, (512 - (size % 512)) % 512)
+            }
+        }
+    }
+
+    private fun skipBytes(input: InputStream, count: Long) {
+        var remaining = count
+        val buf = ByteArray(8192)
+        while (remaining > 0) {
+            val n = input.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+            if (n == -1) break
+            remaining -= n
+        }
+    }
 
     fun stop() {
         terminalSession?.finishIfRunning()
