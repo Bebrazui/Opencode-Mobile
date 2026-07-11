@@ -1,6 +1,8 @@
 package ai.opencode.mobile
 
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.system.Os
 import androidx.annotation.NonNull
 import androidx.annotation.Nullable
@@ -42,6 +44,39 @@ class TermuxManager(private val context: Context) {
     fun isServerReady(): Boolean = serverReady
     fun getServerPort(): Int = serverPort
     fun getServerUrl(): String = "http://127.0.0.1:$serverPort"
+
+    fun isFirstLaunch(): Boolean {
+        val markerFile = File(context.filesDir, "alpine/root/.packages_installed")
+        return !markerFile.exists()
+    }
+
+    fun startBackendService() {
+        val intent = Intent(context, BackendService::class.java).apply {
+            action = BackendService.ACTION_START
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+    }
+
+    fun sendTaskCompleteNotification(title: String, text: String) {
+        val intent = Intent(context, BackendService::class.java).apply {
+            action = BackendService.ACTION_TASK_COMPLETE
+            putExtra("title", title)
+            putExtra("text", text)
+        }
+        context.startService(intent)
+    }
+
+    fun updateServiceStatus(status: String) {
+        val intent = Intent(context, BackendService::class.java).apply {
+            action = BackendService.ACTION_UPDATE_STATUS
+            putExtra("status", status)
+        }
+        context.startService(intent)
+    }
 
     fun start(projectPath: String) {
         if (isRunning()) return
@@ -221,12 +256,14 @@ class TermuxManager(private val context: Context) {
                                     val portMatch = Regex(":(\\d+)").find(line)
                                     serverPort = portMatch?.groupValues?.get(1)?.toIntOrNull() ?: 4096
                                     log("=== SERVER READY on port $serverPort ===")
+                                    startBackendService()
                                     onReady?.invoke()
                                 }
                                 // Also detect old format for compatibility
                                 if (line.contains("OpenCode server started")) {
                                     serverReady = true
                                     log("=== SERVER READY ===")
+                                    startBackendService()
                                     onReady?.invoke()
                                 }
                             }

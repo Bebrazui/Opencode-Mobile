@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">OpenCode</string>
+    <string name="gemini_3_5_">Gemini 3.5 Flash</string>
+    <string name="google_ai_s">Google AI  Studio</string>
+    <string name="ask_opencod">Ask OpenCode…</string>
+    <string name="build_somet">Build something?</string>
+    <string name="plan">Plan</string>
 </resources>

@@ -3,12 +3,18 @@ package ai.opencode.mobile
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import android.view.View
 import android.webkit.*
 import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -20,22 +26,64 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var termuxManager: TermuxManager
     private var backendReady = false
-    private val SERVER_URL = "http://127.0.0.1:4096"
+    private var serverUrl = ""
+    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+    private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
+    private lateinit var folderPickerLauncher: ActivityResultLauncher<Intent>
+    private var folderPickerCallback: String? = null
 
     private val logLines = StringBuilder()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        fileChooserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                val data = result.data
+                val resultUri = data?.data
+                val clipData = data?.clipData
+                if (clipData != null) {
+                    val uris = mutableListOf<Uri>()
+                    for (i in 0 until clipData.itemCount) {
+                        uris.add(clipData.getItemAt(i).uri)
+                    }
+                    fileChooserCallback?.onReceiveValue(uris.toTypedArray())
+                } else if (resultUri != null) {
+                    fileChooserCallback?.onReceiveValue(arrayOf(resultUri))
+                } else {
+                    fileChooserCallback?.onReceiveValue(null)
+                }
+            } else {
+                fileChooserCallback?.onReceiveValue(null)
+            }
+            fileChooserCallback = null
+        }
+
+        folderPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                val uri = result.data?.data
+                if (uri != null) {
+                    val path = getPathFromUri(uri)
+                    if (path != null && folderPickerCallback != null) {
+                        val js = "window.__folderPickerResult('${path.replace("'", "\\'")}')"
+                        runOnUiThread {
+                            binding.webview.evaluateJavascript(js, null)
+                        }
+                    }
+                }
+            }
+            folderPickerCallback = null
+        }
+
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, window.decorView).let { controller ->
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-            controller.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
+
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.hide(WindowInsetsCompat.Type.statusBars())
+        controller.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
         termuxManager = TermuxManager(this)
 
@@ -63,7 +111,7 @@ class MainActivity : AppCompatActivity() {
 
         termuxManager.onReady = {
             runOnUiThread {
-                binding.statusText.text = "Ready!"
+                serverUrl = termuxManager.getServerUrl()
                 loadWebView()
             }
         }
@@ -92,11 +140,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupWebView()
+
+        // Request notification permission on Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
+        }
+
+        val isFirst = termuxManager.isFirstLaunch()
+        if (isFirst) {
+            binding.splashSimple.visibility = View.VISIBLE
+            binding.splashDetailed.visibility = View.GONE
+        } else {
+            binding.splashSimple.visibility = View.GONE
+            binding.splashDetailed.visibility = View.VISIBLE
+        }
+
         startBackend()
     }
 
     private fun updateStepUI(step: String, status: String) {
-        // Map new step names to existing UI elements
         val mappedStep = when (step) {
             "setup" -> "extract"
             "shell" -> "bun"
@@ -272,8 +334,108 @@ class MainActivity : AppCompatActivity() {
             settings.allowContentAccess = true
             settings.mediaPlaybackRequiresUserGesture = false
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
+
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = true
 
             webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    // Override directory picker for Android
+                    val js = """
+                        (function() {
+                            window.__folderPickerResult = null;
+                            window.openFolderPicker = function() {
+                                return new Promise(function(resolve) {
+                                    window.__folderPickerResult = function(path) {
+                                        resolve(path);
+                                    };
+                                    if (window.AndroidBridge) {
+                                        window.AndroidBridge.openFolderPicker('folder');
+                                    }
+                                });
+                            };
+                            
+                            // Override the directory picker dialog
+                            var observer = new MutationObserver(function(mutations) {
+                                mutations.forEach(function(mutation) {
+                                    mutation.addedNodes.forEach(function(node) {
+                                        if (node.nodeType === 1) {
+                                            // Look for directory picker dialog
+                                            var dialogs = node.querySelectorAll ? node.querySelectorAll('[role="dialog"], [data-component="dialog"]') : [];
+                                            dialogs.forEach(function(dialog) {
+                                                // Check if it's a directory picker
+                                                var text = dialog.textContent || '';
+                                                if (text.includes('Open Project') || text.includes('Select') || text.includes('directory') || text.includes('folder')) {
+                                                    // Find the input field and add a button to use Android picker
+                                                    var inputs = dialog.querySelectorAll('input[type="text"], input:not([type])');
+                                                    inputs.forEach(function(input) {
+                                                        if (!input.dataset.androidPickerAdded) {
+                                                            input.dataset.androidPickerAdded = 'true';
+                                                            var btn = document.createElement('button');
+                                                            btn.textContent = '📱 Pick folder';
+                                                            btn.style.cssText = 'margin-left: 8px; padding: 4px 8px; background: #3b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;';
+                                                            btn.onclick = function() {
+                                                                window.openFolderPicker().then(function(path) {
+                                                                    if (path) {
+                                                                        input.value = path;
+                                                                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                                                                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                                                                    }
+                                                                });
+                                                            };
+                                                            input.parentNode.insertBefore(btn, input.nextSibling);
+                                                        }
+                                                    });
+                                                }
+                                            });
+                                        }
+                                    });
+                                });
+                            });
+                            observer.observe(document.body, { childList: true, subtree: true });
+                            
+                            // Monitor for task completion
+                            var lastThinkingState = false;
+                            var taskMonitor = setInterval(function() {
+                                var thinkingEl = document.querySelector('[data-component="thinking"], .thinking, [class*="loading"], [class*="spinner"]');
+                                var isThinking = thinkingEl !== null;
+                                
+                                if (lastThinkingState && !isThinking) {
+                                    // Task just completed
+                                    if (window.AndroidBridge) {
+                                        window.AndroidBridge.notifyTaskComplete('OpenCode', 'Task completed');
+                                    }
+                                }
+                                lastThinkingState = isThinking;
+                            }, 1000);
+                            
+                            // Also monitor for new assistant messages
+                            var messageObserver = new MutationObserver(function(mutations) {
+                                mutations.forEach(function(mutation) {
+                                    mutation.addedNodes.forEach(function(node) {
+                                        if (node.nodeType === 1) {
+                                            var role = node.getAttribute('data-role') || node.getAttribute('role');
+                                            if (role === 'assistant') {
+                                                // Check if this is a complete message (not streaming)
+                                                setTimeout(function() {
+                                                    var streamingEl = node.querySelector('[data-streaming="true"], .streaming');
+                                                    if (!streamingEl && window.AndroidBridge) {
+                                                        window.AndroidBridge.notifyTaskComplete('OpenCode', 'Response received');
+                                                    }
+                                                }, 2000);
+                                            }
+                                        }
+                                    });
+                                });
+                            });
+                            messageObserver.observe(document.body, { childList: true, subtree: true });
+                        })();
+                    """.trimIndent()
+                    evaluateJavascript(js, null)
+                }
+
                 override fun onReceivedError(
                     view: WebView?,
                     request: WebResourceRequest?,
@@ -290,6 +452,19 @@ class MainActivity : AppCompatActivity() {
                     view: WebView?,
                     request: WebResourceRequest?
                 ): Boolean {
+                    val url = request?.url?.toString() ?: return false
+                    // Block external URLs
+                    if (!url.startsWith(serverUrl) && !url.startsWith("http://127.0.0.1") && !url.startsWith("http://localhost")) {
+                        return true
+                    }
+                    return false
+                }
+
+                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                    if (url == null) return false
+                    if (!url.startsWith(serverUrl) && !url.startsWith("http://127.0.0.1") && !url.startsWith("http://localhost")) {
+                        return true
+                    }
                     return false
                 }
             }
@@ -299,14 +474,89 @@ class MainActivity : AppCompatActivity() {
                     android.util.Log.d("WebView", consoleMessage?.message() ?: "")
                     return true
                 }
+
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: FileChooserParams?
+                ): Boolean {
+                    fileChooserCallback?.onReceiveValue(null)
+                    fileChooserCallback = filePathCallback
+
+                    val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+
+                    val chooserIntent = Intent.createChooser(intent, "Select files")
+                    fileChooserLauncher.launch(chooserIntent)
+                    return true
+                }
             }
+
+            addJavascriptInterface(WebBridge(), "AndroidBridge")
         }
     }
 
+    private inner class WebBridge {
+        @JavascriptInterface
+        fun openFolderPicker(callbackId: String) {
+            folderPickerCallback = callbackId
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+            folderPickerLauncher.launch(intent)
+        }
+
+        @JavascriptInterface
+        fun notifyTaskComplete(title: String, text: String) {
+            termuxManager.sendTaskCompleteNotification(title, text)
+        }
+    }
+
+    private fun getPathFromUri(uri: Uri): String? {
+        // Handle SAF DocumentTree URI
+        if (uri.toString().startsWith("content://com.android.externalstorage.documents/tree/")) {
+            val docId = uri.lastPathSegment ?: return null
+            return "/storage/${docId.replace(":", "/")}"
+        }
+        // Handle regular file URIs
+        val cursor = contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val idx = it.getColumnIndex(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                if (idx >= 0) {
+                    val docId = it.getString(idx)
+                    if (docId != null) {
+                        if (docId.startsWith("primary:")) {
+                            return "/storage/emulated/0/${docId.removePrefix("primary:")}"
+                        }
+                        return "/storage/$docId"
+                    }
+                }
+            }
+        }
+        return uri.path
+    }
+
     private fun loadWebView() {
-        binding.webview.loadUrl(SERVER_URL)
-        binding.splashScreen.visibility = View.GONE
+        binding.splashSimple.visibility = View.GONE
+        binding.splashDetailed.visibility = View.GONE
         binding.webview.visibility = View.VISIBLE
+        binding.webview.loadUrl(serverUrl)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (termuxManager.isServerReady()) {
+            termuxManager.updateServiceStatus("Backend running")
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (termuxManager.isServerReady()) {
+            termuxManager.updateServiceStatus("Running in background")
+        }
     }
 
     override fun onBackPressed() {

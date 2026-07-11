@@ -2,8 +2,9 @@
 <resources>
     <style name="Theme.OpenCode" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/opencode_primary</item>
-        <item name="android:statusBarColor">@color/opencode_bg</item>
-        <item name="android:navigationBarColor">@color/opencode_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowBackground">@color/opencode_bg</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>

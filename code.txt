@@ -1,0 +1,294 @@
+<View
+android:id="@+id/rectangle_2"
+android:layout_width="402dp"
+android:layout_height="874dp"
+android:layout_alignParentLeft="true"
+android:layout_alignParentTop="true"
+android:background="#242424"
+ />
+
+
+
+<View
+android:id="@+id/rectangle_4"
+android:layout_width="372dp"
+android:layout_height="125dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="11dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="730dp"
+android:background="@drawable/rectangle_4"
+ />
+
+<!-- drawable/rectangle_4.xml -->
+<vector
+xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:aapt="http://schemas.android.com/aapt"
+android:width="372dp"
+android:height="125dp"
+android:viewportWidth="372"
+android:viewportHeight="125"
+ >
+<group>
+<clip-path
+android:pathData="M26 0H346C360.359 0 372 11.6406 372 26V99C372 113.359 360.359 125 346 125H26C11.6406 125 0 113.359 0 99V26C0 11.6406 11.6406 0 26 0Z"
+/>
+<path
+android:pathData="M0 0V125H372V0"
+android:fillColor="#FF9D00"
+/>
+</group>
+</vector>
+
+
+<View
+android:id="@+id/rectangle_3"
+android:layout_width="372dp"
+android:layout_height="125dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="15dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="730dp"
+android:background="@drawable/rectangle_3"
+ />
+
+<!-- drawable/rectangle_3.xml -->
+<vector
+xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:aapt="http://schemas.android.com/aapt"
+android:width="372dp"
+android:height="125dp"
+android:viewportWidth="372"
+android:viewportHeight="125"
+ >
+<group>
+<clip-path
+android:pathData="M26 0H346C360.359 0 372 11.6406 372 26V99C372 113.359 360.359 125 346 125H26C11.6406 125 0 113.359 0 99V26C0 11.6406 11.6406 0 26 0Z"
+/>
+<path
+android:pathData="M0 0V125H372V0"
+android:fillColor="#303030"
+/>
+</group>
+</vector>
+
+
+<TextView
+android:id="@+id/gemini_3_5_"
+android:layout_width="157dp"
+android:layout_height="24dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="122dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="40dp"
+android:text="@string/gemini_3_5_"
+android:textAppearance="@style/gemini_3_5_"
+android:gravity="top"
+ />
+<!--
+Font family: Inter
+Line height: 24sp
+-->
+
+<!-- styles.xml -->
+<style name="gemini_3_5_">
+<item name="android:textSize">20sp</item>
+<item name="android:textColor">#FFFFFF</item>
+</style>
+
+<!-- strings.xml -->
+<string name="gemini_3_5_">
+Gemini 3.5 Flash
+</string>
+
+
+
+<TextView
+android:id="@+id/google_ai_s"
+android:layout_width="123dp"
+android:layout_height="18dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="139dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="67dp"
+android:text="@string/google_ai_s"
+android:textAppearance="@style/google_ai_s"
+android:gravity="top"
+ />
+<!--
+Font family: Inter
+Line height: 18sp
+-->
+
+<!-- styles.xml -->
+<style name="google_ai_s">
+<item name="android:textSize">15sp</item>
+<item name="android:textColor">#9D9D9D</item>
+</style>
+
+<!-- strings.xml -->
+<string name="google_ai_s">
+Google AI  Studio
+</string>
+
+
+
+<RelativeLayout
+xmlns:android="http://schemas.android.com/apk/res/android"
+android:id="@+id/frame"
+android:layout_width="24dp"
+android:layout_height="24dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="279dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="40dp"
+android:clipToOutline="true"
+ />
+
+
+
+<TextView
+android:id="@+id/ask_opencod"
+android:layout_width="119dp"
+android:layout_height="18dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="37dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="760dp"
+android:text="@string/ask_opencod"
+android:textAppearance="@style/ask_opencod"
+android:gravity="top"
+ />
+<!--
+Font family: Inter
+Line height: 18sp
+-->
+
+<!-- styles.xml -->
+<style name="ask_opencod">
+<item name="android:textSize">15sp</item>
+<item name="android:textColor">#8E8E8E</item>
+</style>
+
+<!-- strings.xml -->
+<string name="ask_opencod">
+Ask OpenCode...
+</string>
+
+
+
+<RelativeLayout
+xmlns:android="http://schemas.android.com/apk/res/android"
+android:id="@+id/frame"
+android:layout_width="32dp"
+android:layout_height="32dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="30dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="805dp"
+android:clipToOutline="true"
+ />
+
+
+
+<TextView
+android:id="@+id/build_somet"
+android:layout_width="259dp"
+android:layout_height="39dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="71dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="417dp"
+android:text="@string/build_somet"
+android:textAppearance="@style/build_somet"
+android:gravity="top"
+ />
+<!--
+Font family: Inter
+Line height: 39sp
+(identical to box height)
+-->
+
+<!-- styles.xml -->
+<style name="build_somet">
+<item name="android:textSize">32sp</item>
+<item name="android:textColor">#FFFFFF</item>
+</style>
+
+<!-- strings.xml -->
+<string name="build_somet">
+Build something?
+</string>
+
+
+
+<View
+android:id="@+id/some_id"
+android:layout_width="92dp"
+android:layout_height="92dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="154dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="313dp"
+android:background="@drawable/some_id"
+ />
+
+<!-- drawable/some_id.xml -->
+<vector
+xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:aapt="http://schemas.android.com/aapt"
+android:width="92dp"
+android:height="92dp"
+android:viewportWidth="92"
+android:viewportHeight="92"
+ >
+<group>
+<clip-path
+android:pathData="M0 0H92V92H0V0Z"
+/>
+</group>
+</vector>
+
+
+<RelativeLayout
+xmlns:android="http://schemas.android.com/apk/res/android"
+android:id="@+id/frame"
+android:layout_width="24dp"
+android:layout_height="24dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="22dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="40dp"
+android:clipToOutline="true"
+ />
+
+
+
+<TextView
+android:id="@+id/plan"
+android:layout_width="31dp"
+android:layout_height="18dp"
+android:layout_alignParentLeft="true"
+android:layout_marginLeft="76dp"
+android:layout_alignParentTop="true"
+android:layout_marginTop="812dp"
+android:text="@string/plan"
+android:textAppearance="@style/plan"
+android:gravity="top"
+ />
+<!--
+Font family: Inter
+Line height: 18sp
+-->
+
+<!-- styles.xml -->
+<style name="plan">
+<item name="android:textSize">15sp</item>
+<item name="android:textColor">#FF9D00</item>
+</style>
+
+<!-- strings.xml -->
+<string name="plan">
+Plan
+</string>
+

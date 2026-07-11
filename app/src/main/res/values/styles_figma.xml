@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="gemini_3_5_">
+        <item name="android:textSize">20sp</item>
+        <item name="android:textColor">#FFFFFF</item>
+    </style>
+
+    <style name="google_ai_s">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">#9D9D9D</item>
+    </style>
+
+    <style name="ask_opencod">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">#8E8E8E</item>
+    </style>
+
+    <style name="build_somet">
+        <item name="android:textSize">32sp</item>
+        <item name="android:textColor">#FFFFFF</item>
+    </style>
+
+    <style name="plan">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">#FF9D00</item>
+    </style>
+</resources>

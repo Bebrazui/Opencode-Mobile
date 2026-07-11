@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="402dp"
+    android:layout_height="874dp"
+    android:background="#242424">
+
+    <!-- Orange glow behind input -->
+    <View
+        android:id="@+id/rectangle_4"
+        android:layout_width="372dp"
+        android:layout_height="125dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="11dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="730dp"
+        android:background="@drawable/rectangle_4" />
+
+    <!-- Input field background -->
+    <View
+        android:id="@+id/rectangle_3"
+        android:layout_width="372dp"
+        android:layout_height="125dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="15dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="730dp"
+        android:background="@drawable/rectangle_3" />
+
+    <!-- Model name -->
+    <TextView
+        android:id="@+id/gemini_3_5_"
+        android:layout_width="157dp"
+        android:layout_height="24dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="122dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="40dp"
+        android:text="@string/gemini_3_5_"
+        android:textAppearance="@style/gemini_3_5_"
+        android:gravity="top" />
+
+    <!-- Provider name -->
+    <TextView
+        android:id="@+id/google_ai_s"
+        android:layout_width="123dp"
+        android:layout_height="18dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="139dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="67dp"
+        android:text="@string/google_ai_s"
+        android:textAppearance="@style/google_ai_s"
+        android:gravity="top" />
+
+    <!-- Arrow down icon placeholder -->
+    <RelativeLayout
+        android:id="@+id/frame_arrow"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="279dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="40dp"
+        android:clipToOutline="true" />
+
+    <!-- Placeholder text -->
+    <TextView
+        android:id="@+id/ask_opencod"
+        android:layout_width="119dp"
+        android:layout_height="18dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="37dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="760dp"
+        android:text="@string/ask_opencod"
+        android:textAppearance="@style/ask_opencod"
+        android:gravity="top" />
+
+    <!-- Plus button placeholder -->
+    <RelativeLayout
+        android:id="@+id/frame_plus"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="30dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="805dp"
+        android:clipToOutline="true" />
+
+    <!-- Build something? text -->
+    <TextView
+        android:id="@+id/build_somet"
+        android:layout_width="259dp"
+        android:layout_height="39dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="71dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="417dp"
+        android:text="@string/build_somet"
+        android:textAppearance="@style/build_somet"
+        android:gravity="top" />
+
+    <!-- Icon placeholder (92dp) -->
+    <View
+        android:id="@+id/some_id"
+        android:layout_width="92dp"
+        android:layout_height="92dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="154dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="313dp"
+        android:background="@drawable/some_id" />
+
+    <!-- Hamburger menu placeholder -->
+    <RelativeLayout
+        android:id="@+id/frame_menu"
+        android:layout_width="24dp"
+        android:layout_height="24dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="22dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="40dp"
+        android:clipToOutline="true" />
+
+    <!-- Plan text -->
+    <TextView
+        android:id="@+id/plan"
+        android:layout_width="31dp"
+        android:layout_height="18dp"
+        android:layout_alignParentLeft="true"
+        android:layout_marginLeft="76dp"
+        android:layout_alignParentTop="true"
+        android:layout_marginTop="812dp"
+        android:text="@string/plan"
+        android:textAppearance="@style/plan"
+        android:gravity="top" />
+
+</RelativeLayout>
