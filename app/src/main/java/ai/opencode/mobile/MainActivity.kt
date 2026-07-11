@@ -141,7 +141,6 @@ class MainActivity : AppCompatActivity() {
 
         setupWebView()
 
-        // Request notification permission on Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
         }
@@ -334,7 +333,7 @@ class MainActivity : AppCompatActivity() {
             settings.allowContentAccess = true
             settings.mediaPlaybackRequiresUserGesture = false
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-            settings.cacheMode = WebSettings.LOAD_DEFAULT
+            settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
 
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
@@ -342,96 +341,271 @@ class MainActivity : AppCompatActivity() {
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    // Override directory picker for Android
                     val js = """
-                        (function() {
-                            window.__folderPickerResult = null;
-                            window.openFolderPicker = function() {
-                                return new Promise(function(resolve) {
-                                    window.__folderPickerResult = function(path) {
-                                        resolve(path);
-                                    };
-                                    if (window.AndroidBridge) {
-                                        window.AndroidBridge.openFolderPicker('folder');
-                                    }
-                                });
-                            };
-                            
-                            // Override the directory picker dialog
-                            var observer = new MutationObserver(function(mutations) {
-                                mutations.forEach(function(mutation) {
-                                    mutation.addedNodes.forEach(function(node) {
-                                        if (node.nodeType === 1) {
-                                            // Look for directory picker dialog
-                                            var dialogs = node.querySelectorAll ? node.querySelectorAll('[role="dialog"], [data-component="dialog"]') : [];
-                                            dialogs.forEach(function(dialog) {
-                                                // Check if it's a directory picker
-                                                var text = dialog.textContent || '';
-                                                if (text.includes('Open Project') || text.includes('Select') || text.includes('directory') || text.includes('folder')) {
-                                                    // Find the input field and add a button to use Android picker
-                                                    var inputs = dialog.querySelectorAll('input[type="text"], input:not([type])');
-                                                    inputs.forEach(function(input) {
-                                                        if (!input.dataset.androidPickerAdded) {
-                                                            input.dataset.androidPickerAdded = 'true';
-                                                            var btn = document.createElement('button');
-                                                            btn.textContent = '📱 Pick folder';
-                                                            btn.style.cssText = 'margin-left: 8px; padding: 4px 8px; background: #3b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;';
-                                                            btn.onclick = function() {
-                                                                window.openFolderPicker().then(function(path) {
-                                                                    if (path) {
-                                                                        input.value = path;
-                                                                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                                                                        input.dispatchEvent(new Event('change', { bubbles: true }));
-                                                                    }
-                                                                });
-                                                            };
-                                                            input.parentNode.insertBefore(btn, input.nextSibling);
-                                                        }
-                                                    });
-                                                }
-                                            });
-                                        }
-                                    });
-                                });
-                            });
-                            observer.observe(document.body, { childList: true, subtree: true });
-                            
-                            // Monitor for task completion
-                            var lastThinkingState = false;
-                            var taskMonitor = setInterval(function() {
-                                var thinkingEl = document.querySelector('[data-component="thinking"], .thinking, [class*="loading"], [class*="spinner"]');
-                                var isThinking = thinkingEl !== null;
-                                
-                                if (lastThinkingState && !isThinking) {
-                                    // Task just completed
-                                    if (window.AndroidBridge) {
-                                        window.AndroidBridge.notifyTaskComplete('OpenCode', 'Task completed');
-                                    }
-                                }
-                                lastThinkingState = isThinking;
-                            }, 1000);
-                            
-                            // Also monitor for new assistant messages
-                            var messageObserver = new MutationObserver(function(mutations) {
-                                mutations.forEach(function(mutation) {
-                                    mutation.addedNodes.forEach(function(node) {
-                                        if (node.nodeType === 1) {
-                                            var role = node.getAttribute('data-role') || node.getAttribute('role');
-                                            if (role === 'assistant') {
-                                                // Check if this is a complete message (not streaming)
-                                                setTimeout(function() {
-                                                    var streamingEl = node.querySelector('[data-streaming="true"], .streaming');
-                                                    if (!streamingEl && window.AndroidBridge) {
-                                                        window.AndroidBridge.notifyTaskComplete('OpenCode', 'Response received');
-                                                    }
-                                                }, 2000);
+(function() {
+    if (window.__ocMobile) return;
+    window.__ocMobile = true;
+
+    // === OFFLINE: stub external fetches that block render ===
+    var _origFetch = window.fetch;
+    window.fetch = function(url, opts) {
+        if (typeof url === 'string' && (url.indexOf('opencode.ai') !== -1 || url.indexOf('changelog') !== -1)) {
+            return Promise.reject(new Error('offline'));
+        }
+        return _origFetch.apply(this, arguments);
+    };
+    // Override notification icon to avoid external image load
+    var _origNotify = window.Notification;
+    if (_origNotify && _origNotify.permission) {
+        var _origNotifyCtr = window.Notification;
+        window.Notification = function(title, opts) {
+            if (opts && opts.icon) opts.icon = undefined;
+            return new _origNotifyCtr(title, opts);
+        };
+        window.Notification.permission = _origNotifyCtr.permission;
+        window.Notification.requestPermission = _origNotifyCtr.requestPermission;
+    }
+
+    var css = document.createElement('style');
+    css.textContent = [
+        '@media(max-width:639px){',
+        '[data-component="dialog-v2"][data-variant="settings"]{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:100vw!important;margin:0!important;border-radius:0!important;z-index:99999}',
+        '[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-container"]{width:100%!important;height:100%!important;border-radius:0!important;padding:0!important}',
+        '[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-content"]{width:100%!important;height:100%!important;border-radius:0!important;padding:0!important;overflow:hidden!important}',
+        '[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-header"]{display:none!important}',
+        '[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-close-button"]{display:none!important}',
+        '[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-body"]{height:100%!important;padding:0!important;overflow:hidden!important;display:flex!important;flex-direction:column!important}',
+        '[data-component="tabs-v2"][data-variant="settings"]{height:100%!important}',
+        '[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-list"]{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:2!important;display:flex!important;flex-direction:column!important;padding:8px 0!important;overflow-y:auto!important;background:var(--v2-background-bg-base,#111)!important;scrollbar-width:none!important}',
+        '[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-list"]::-webkit-scrollbar{display:none}',
+        '[data-component="tabs-v2"][data-variant="settings"][data-slot="tabs-v2-section-title"]{padding:16px 20px 6px!important;font-size:12px!important;font-weight:600!important;text-transform:uppercase;letter-spacing:.5px;color:var(--v2-text-text-muted,#888)!important}',
+        '[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-trigger-wrapper"]{padding:0!important;margin:0!important}',
+        '[data-component="tabs-v2"][data-variant="settings"] [role="tab"]{width:100%!important;padding:14px 20px!important;font-size:16px!important;border-radius:0!important;border-bottom:.5px solid rgba(255,255,255,.06)!important;display:flex!important;align-items:center!important;gap:12px!important;justify-content:flex-start!important}',
+        '[data-component="tabs-v2"][data-variant="settings"] [role="tab"]:active{background:rgba(255,255,255,.08)!important}',
+        '[data-component="tabs-v2"][data-variant="settings"] [role="tab"] svg{width:20px!important;height:20px!important;color:var(--v2-icon-icon-muted,#888)!important;flex-shrink:0!important}',
+        '[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-content"]{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:3!important;overflow-y:auto!important;background:var(--v2-background-bg-base,#111)!important;scrollbar-width:none!important;display:none!important;padding:0!important}',
+        '[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-content"][data-selected]{display:flex!important;flex-direction:column!important}',
+        '.settings-v2-nav-footer{padding:16px 20px!important;border-top:.5px solid var(--v2-border-border-base,#333)!important;font-size:12px!important;color:var(--v2-text-text-faint,#666)!important}',
+        '.settings-v2-nav-footer span:first-child{display:block!important;margin-bottom:4px!important}',
+        '.oc-back-btn{position:sticky!important;top:0!important;z-index:10!important;display:flex!important;align-items:center!important;gap:6px!important;padding:14px 16px!important;border:none!important;background:var(--v2-background-bg-base,#111)!important;border-bottom:.5px solid var(--v2-border-border-base,#333)!important;cursor:pointer!important;color:var(--v2-text-text-accent,#5b9bf5)!important;font-size:15px!important;font-weight:500!important;width:100%!important;text-align:left!important;flex-shrink:0!important;flex-grow:0!important}',
+        '.oc-menu-header{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:12px 16px!important;border-bottom:.5px solid var(--v2-border-border-base,#333);flex-shrink:0!important}',
+        '.oc-menu-title{font-size:17px!important;font-weight:600!important;color:var(--v2-text-text-base,#fff)!important}',
+        '.oc-menu-close{display:flex!important;align-items:center!important;justify-content:center!important;width:36px!important;height:36px!important;border-radius:8px!important;border:none!important;background:transparent!important;cursor:pointer!important;flex-shrink:0!important;color:var(--v2-text-text-muted,#888)!important;padding:0!important}',
+        '.oc-menu-close:active{background:rgba(255,255,255,.1)!important}',
+        '}'
+    ].join('');
+    document.head.appendChild(css);
+
+    // === OFFLINE: fix broken images from external URLs ===
+    var _ocImgObs = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+            m.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) {
+                    var imgs = node.querySelectorAll ? node.querySelectorAll('img[src*="opencode.ai"], img[src*="favicon"]') : [];
+                    imgs.forEach(function(img) { img.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="%23FF9D00"/><text x="16" y="22" text-anchor="middle" font-size="18" fill="%23000" font-family="sans-serif">O</text></svg>'; });
+                }
+            });
+        });
+    });
+    _ocImgObs.observe(document.body, {childList:true, subtree:true});
+
+    var _ocShowingContent = false;
+
+    function ocApplyContentStyles() {
+        if (window.innerWidth > 639) return;
+        var dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+        if (!dialog) return;
+        var list = dialog.querySelector('[data-slot="tabs-v2-list"]');
+        var target = dialog.querySelector('[data-slot="tabs-v2-content"][data-selected]');
+        if (!target) return;
+
+        if (_ocShowingContent) {
+            if (list) list.style.setProperty('display', 'none', 'important');
+            target.style.setProperty('display', 'flex', 'important');
+            target.style.setProperty('flex-direction', 'column', 'important');
+            target.style.setProperty('overflow-y', 'auto', 'important');
+            target.style.setProperty('position', 'absolute', 'important');
+            target.style.setProperty('inset', '0', 'important');
+            target.style.setProperty('width', '100%', 'important');
+            target.style.setProperty('height', '100%', 'important');
+            target.style.setProperty('box-sizing', 'border-box', 'important');
+            if (!target.querySelector('.oc-back-btn')) {
+                var back = document.createElement('button');
+                back.type = 'button';
+                back.className = 'oc-back-btn';
+                back.innerHTML = '\u2190 Back';
+                back.onclick = function(ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    _ocShowingContent = false;
+                    ocApplyContentStyles();
+                };
+                target.insertBefore(back, target.firstChild);
+            }
+        } else {
+            var contents = dialog.querySelectorAll('[data-slot="tabs-v2-content"]');
+            contents.forEach(function(c) {
+                c.style.setProperty('display', 'none', 'important');
+            });
+            if (list) {
+                list.style.setProperty('display', 'flex', 'important');
+                list.style.setProperty('flex-direction', 'column', 'important');
+            }
+            var oldBack = target.querySelector('.oc-back-btn');
+            if (oldBack) oldBack.remove();
+            ocInjectMenuHeader(dialog);
+        }
+    }
+
+    function ocInjectMenuHeader(dialog) {
+        if (!dialog) dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+        if (!dialog) return;
+        var list = dialog.querySelector('[data-slot="tabs-v2-list"]');
+        if (!list || list.querySelector('.oc-menu-header')) return;
+
+        var hdr = document.createElement('div');
+        hdr.className = 'oc-menu-header';
+
+        var title = document.createElement('span');
+        title.className = 'oc-menu-title';
+        title.textContent = 'Settings';
+
+        var closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'oc-menu-close';
+        closeBtn.innerHTML = '\u2715';
+        closeBtn.onclick = function(ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            var overlay = dialog.querySelector('[data-slot="dialog-overlay"]');
+            if (overlay) { overlay.dispatchEvent(new MouseEvent('pointerdown', {bubbles:true})); overlay.dispatchEvent(new MouseEvent('click', {bubbles:true})); }
+            else {
+                var esc = new KeyboardEvent('keydown', {key:'Escape', code:'Escape', keyCode:27, which:27, bubbles:true});
+                document.dispatchEvent(esc);
+            }
+        };
+
+        hdr.appendChild(title);
+        hdr.appendChild(closeBtn);
+        list.insertBefore(hdr, list.firstChild);
+    }
+
+    window.ocSettingsBack = function() {
+        if (_ocShowingContent) {
+            _ocShowingContent = false;
+            ocApplyContentStyles();
+            return true;
+        }
+        return false;
+    };
+
+    window.ocIsSettingsOpen = function() {
+        var dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+        if (!dialog) return false;
+        var c = dialog.querySelector('[role="dialog"]');
+        if (!c) c = dialog;
+        return c.offsetHeight > 0;
+    };
+
+    var _ocObs = new MutationObserver(function() {
+        if (window.innerWidth > 639) return;
+        ocApplyContentStyles();
+    });
+    _ocObs.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['data-selected']});
+
+    document.addEventListener('pointerdown', function(e) {
+        if (window.innerWidth > 639) return;
+        var tab = e.target.closest('[role="tab"]');
+        if (!tab) return;
+        var dialog = tab.closest('[data-component="dialog-v2"][data-variant="settings"]');
+        if (!dialog) return;
+        _ocShowingContent = true;
+        setTimeout(function() { ocApplyContentStyles(); }, 200);
+    }, true);
+
+    var _ocInit = setInterval(function() {
+        var dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+        if (!dialog) return;
+        if (window.innerWidth > 639) { clearInterval(_ocInit); return; }
+        clearInterval(_ocInit);
+        _ocShowingContent = false;
+        ocApplyContentStyles();
+    }, 100);
+
+    // === FOLDER PICKER ===
+    window.__folderPickerResult = null;
+    window.openFolderPicker = function() {
+        return new Promise(function(resolve) {
+            window.__folderPickerResult = function(path) { resolve(path); };
+            if (window.AndroidBridge) {
+                window.AndroidBridge.openFolderPicker('folder');
+            }
+        });
+    };
+
+    var _ocDirObs = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            mutation.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) {
+                    var dialogs = node.querySelectorAll ? node.querySelectorAll('[role="dialog"], [data-component="dialog"]') : [];
+                    dialogs.forEach(function(dialog) {
+                        var text = dialog.textContent || '';
+                        if (text.includes('Open Project') || text.includes('Select') || text.includes('directory') || text.includes('folder')) {
+                            var inputs = dialog.querySelectorAll('input[type="text"], input:not([type])');
+                            inputs.forEach(function(input) {
+                                if (!input.dataset.androidPickerAdded) {
+                                    input.dataset.androidPickerAdded = 'true';
+                                    var btn = document.createElement('button');
+                                    btn.textContent = '\uD83D\uDCF1 Pick folder';
+                                    btn.style.cssText = 'margin-left:8px;padding:4px 8px;background:#3b5cf6;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px';
+                                    btn.onclick = function() {
+                                        window.openFolderPicker().then(function(path) {
+                                            if (path) {
+                                                input.value = path;
+                                                input.dispatchEvent(new Event('input', {bubbles:true}));
+                                                input.dispatchEvent(new Event('change', {bubbles:true}));
                                             }
-                                        }
-                                    });
-                                });
+                                        });
+                                    };
+                                    input.parentNode.insertBefore(btn, input.nextSibling);
+                                }
                             });
-                            messageObserver.observe(document.body, { childList: true, subtree: true });
-                        })();
+                        }
+                    });
+                }
+            });
+        });
+    });
+    _ocDirObs.observe(document.body, {childList:true, subtree:true});
+
+    // === NOTIFICATIONS ===
+    var lastThinkingState = false;
+    setInterval(function() {
+        var el = document.querySelector('[data-component="thinking"], .thinking, [class*="loading"], [class*="spinner"]');
+        var isThinking = el !== null;
+        if (lastThinkingState && !isThinking) {
+            if (window.AndroidBridge) window.AndroidBridge.notifyTaskComplete('OpenCode', 'Task completed');
+        }
+        lastThinkingState = isThinking;
+    }, 1000);
+
+    var _ocMsgObs = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+            m.addedNodes.forEach(function(node) {
+                if (node.nodeType === 1) {
+                    var role = node.getAttribute('data-role') || node.getAttribute('role');
+                    if (role === 'assistant') {
+                        setTimeout(function() {
+                            var streaming = node.querySelector('[data-streaming="true"], .streaming');
+                            if (!streaming && window.AndroidBridge) window.AndroidBridge.notifyTaskComplete('OpenCode', 'Response received');
+                        }, 2000);
+                    }
+                }
+            });
+        });
+    });
+    _ocMsgObs.observe(document.body, {childList:true, subtree:true});
+})();
                     """.trimIndent()
                     evaluateJavascript(js, null)
                 }
@@ -448,20 +622,23 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
+                override fun onReceivedHttpError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    errorResponse: WebResourceResponse?
+                ) {
+                    if (request?.isForMainFrame == true) {
+                        view?.postDelayed({
+                            view.reload()
+                        }, 3000)
+                    }
+                }
+
                 override fun shouldOverrideUrlLoading(
                     view: WebView?,
                     request: WebResourceRequest?
                 ): Boolean {
                     val url = request?.url?.toString() ?: return false
-                    // Block external URLs
-                    if (!url.startsWith(serverUrl) && !url.startsWith("http://127.0.0.1") && !url.startsWith("http://localhost")) {
-                        return true
-                    }
-                    return false
-                }
-
-                override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                    if (url == null) return false
                     if (!url.startsWith(serverUrl) && !url.startsWith("http://127.0.0.1") && !url.startsWith("http://localhost")) {
                         return true
                     }
@@ -514,12 +691,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getPathFromUri(uri: Uri): String? {
-        // Handle SAF DocumentTree URI
         if (uri.toString().startsWith("content://com.android.externalstorage.documents/tree/")) {
             val docId = uri.lastPathSegment ?: return null
             return "/storage/${docId.replace(":", "/")}"
         }
-        // Handle regular file URIs
         val cursor = contentResolver.query(uri, null, null, null, null)
         cursor?.use {
             if (it.moveToFirst()) {
@@ -559,9 +734,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        if (binding.webview.visibility == View.VISIBLE && binding.webview.canGoBack()) {
-            binding.webview.goBack()
+        if (binding.webview.visibility == View.VISIBLE) {
+            binding.webview.evaluateJavascript("window.ocIsSettingsOpen()") { isSettings ->
+                if (isSettings == "true") {
+                    binding.webview.evaluateJavascript("window.ocSettingsBack()") { wentBack ->
+                        if (wentBack != "true") {
+                            runOnUiThread { super.onBackPressed() }
+                        }
+                    }
+                } else if (binding.webview.canGoBack()) {
+                    binding.webview.goBack()
+                } else {
+                    runOnUiThread { super.onBackPressed() }
+                }
+            }
         } else {
             super.onBackPressed()
         }
