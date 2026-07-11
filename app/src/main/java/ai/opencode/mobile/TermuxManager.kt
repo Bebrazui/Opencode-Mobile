@@ -321,8 +321,8 @@ class TermuxManager(private val context: Context) {
             "export HOME=/root; export TERM=xterm-256color; " +
             "if [ ! -f /root/.packages_installed_v2 ]; then " +
             "  echo [ALPINE] Installing packages...; " +
-            "  apk update --no-cache 2>/dev/null; " +
-            "  apk add --no-cache bash readline libstdc++ 2>/dev/null; " +
+            "  apk update --no-cache; " +
+            "  apk add --no-cache bash readline libstdc++ gcc-libs; " +
             "  touch /root/.packages_installed_v2; " +
             "fi; " +
             "echo [ALPINE] Starting opencode-server...; " +
