@@ -532,6 +532,42 @@ class MainActivity : AppCompatActivity() {
         ocApplyContentStyles();
     }, 100);
 
+    // === RE-INJECT on dialog re-render (e.g. layout toggle) ===
+    var _ocDialogObs = new MutationObserver(function(mutations) {
+        if (window.innerWidth > 639) return;
+        var dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+        if (!dialog) return;
+        if (!dialog.querySelector('.oc-menu-header')) {
+            _ocShowingContent = false;
+            ocApplyContentStyles();
+        }
+    });
+    _ocDialogObs.observe(document.body, {childList:true, subtree:true});
+
+    // === OPEN PROJECT: always show "/" ===
+    var _ocProjectObs = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+            m.addedNodes.forEach(function(node) {
+                if (node.nodeType !== 1) return;
+                var dialogs = node.querySelectorAll ? node.querySelectorAll('[role="dialog"], [data-component="dialog"]') : [];
+                dialogs.forEach(function(dlg) {
+                    var text = dlg.textContent || '';
+                    if (text.includes('Open Project') || text.includes('Select') || text.includes('directory') || text.includes('folder')) {
+                        var inputs = dlg.querySelectorAll('input[type="text"], input:not([type])');
+                        inputs.forEach(function(input) {
+                            if (!input.dataset.ocRootAdded) {
+                                input.dataset.ocRootAdded = 'true';
+                                input.placeholder = 'Enter path (e.g. / )';
+                                if (!input.value) input.value = '/';
+                            }
+                        });
+                    }
+                });
+            });
+        });
+    });
+    _ocProjectObs.observe(document.body, {childList:true, subtree:true});
+
     // === FOLDER PICKER ===
     window.__folderPickerResult = null;
     window.openFolderPicker = function() {
