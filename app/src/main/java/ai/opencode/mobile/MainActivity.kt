@@ -339,6 +339,33 @@ class MainActivity : AppCompatActivity() {
             settings.loadWithOverviewMode = true
 
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                    val r = request ?: return null
+                    val urlStr = r.url?.toString() ?: return null
+                    val host = r.url?.host ?: return null
+                    if (host != "127.0.0.1" && host != "localhost") return null
+                    val path = r.url?.path ?: return null
+                    if (path.startsWith("/api/") || path.startsWith("/session/")) return null
+                    if (r.method?.uppercase() == "POST") return null
+                    val webDir = java.io.File(filesDir, "web")
+                    if (!webDir.exists()) return null
+                    val rel = path.trimStart('/')
+                    val file = if (rel.isEmpty() || rel == "index.html") java.io.File(webDir, "index.html")
+                               else java.io.File(webDir, rel)
+                    if (!file.exists() || !file.isFile) {
+                        val fallback = java.io.File(webDir, "index.html")
+                        if (fallback.exists()) {
+                            val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension("html") ?: "text/html"
+                            return WebResourceResponse(mime, "UTF-8", fallback.inputStream())
+                        }
+                        return null
+                    }
+                    val ext = file.extension.lowercase()
+                    val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+                        ?: if (ext == "js") "application/javascript" else "application/octet-stream"
+                    return WebResourceResponse(mime, "UTF-8", file.inputStream())
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     val js = """
@@ -346,13 +373,27 @@ class MainActivity : AppCompatActivity() {
     if (window.__ocMobile) return;
     window.__ocMobile = true;
 
+    // === ERROR INTERCEPTION ===
+    window.onerror = function(msg, src, line, col, err) {
+        console.error('[OC_ERR] ' + msg + ' at ' + (src||'') + ':' + line + ':' + col);
+    };
+    window.addEventListener('unhandledrejection', function(e) {
+        var reason = e && e.reason;
+        var detail = (reason && reason.stack) || (reason && reason.message) || String(reason);
+        console.error('[OC_ERR_PROMISE] ' + detail);
+    });
+
     // === OFFLINE: stub external fetches that block render ===
     var _origFetch = window.fetch;
     window.fetch = function(url, opts) {
         if (typeof url === 'string' && (url.indexOf('opencode.ai') !== -1 || url.indexOf('changelog') !== -1)) {
             return Promise.reject(new Error('offline'));
         }
-        return _origFetch.apply(this, arguments);
+        var urlStr = typeof url === 'string' ? url : (url && url.url) || '';
+        return _origFetch.apply(this, arguments).catch(function(err) {
+            console.error('[OC_FETCH_ERR] ' + (opts && opts.method || 'GET') + ' ' + urlStr + ' -> ' + (err.message || err));
+            throw err;
+        });
     };
     // Override notification icon to avoid external image load
     var _origNotify = window.Notification;
@@ -367,8 +408,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     var css = document.createElement('style');
+    css.id = 'oc-mobile-css';
     css.textContent = [
         '@media(max-width:639px){',
+        // === DIALOG V2 (new layout) ===
         '[data-component="dialog-v2"][data-variant="settings"]{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:100vw!important;margin:0!important;border-radius:0!important;z-index:99999}',
         '[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-container"]{width:100%!important;height:100%!important;border-radius:0!important;padding:0!important}',
         '[data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-content"]{width:100%!important;height:100%!important;border-radius:0!important;padding:0!important;overflow:hidden!important}',
@@ -383,8 +426,22 @@ class MainActivity : AppCompatActivity() {
         '[data-component="tabs-v2"][data-variant="settings"] [role="tab"]{width:100%!important;padding:14px 20px!important;font-size:16px!important;border-radius:0!important;border-bottom:.5px solid rgba(255,255,255,.06)!important;display:flex!important;align-items:center!important;gap:12px!important;justify-content:flex-start!important}',
         '[data-component="tabs-v2"][data-variant="settings"] [role="tab"]:active{background:rgba(255,255,255,.08)!important}',
         '[data-component="tabs-v2"][data-variant="settings"] [role="tab"] svg{width:20px!important;height:20px!important;color:var(--v2-icon-icon-muted,#888)!important;flex-shrink:0!important}',
-        '[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-content"]{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:3!important;overflow-y:auto!important;background:var(--v2-background-bg-base,#111)!important;scrollbar-width:none!important;display:none!important;padding:0!important}',
+        '[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-content"]{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:3!important;overflow-y:auto!important;background:var(--v2-background-bg-base,#111)!important;scrollbar-width:none!important;padding:0!important}',
         '[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-content"][data-selected]{display:flex!important;flex-direction:column!important}',
+        // === DIALOG v1 (old layout) ===
+        '[data-component="dialog"][data-size="x-large"]{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:100vw!important;margin:0!important;border-radius:0!important;z-index:99999}',
+        '[data-component="dialog"][data-size="x-large"] [data-slot="dialog-container"]{width:100%!important;height:100%!important;border-radius:0!important;padding:0!important}',
+        '[data-component="dialog"][data-size="x-large"] [data-slot="dialog-content"]{width:100%!important;height:100%!important;border-radius:0!important;padding:0!important;overflow:hidden!important}',
+        '[data-component="dialog"][data-size="x-large"] [data-slot="dialog-header"]{display:none!important}',
+        '[data-component="dialog"][data-size="x-large"] [data-slot="dialog-close-button"]{display:none!important}',
+        '.settings-dialog[data-orientation="vertical"] [role="tablist"]{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:2!important;display:flex!important;flex-direction:column!important;padding:8px 0!important;overflow-y:auto!important;background:var(--v2-background-bg-base,#111)!important;scrollbar-width:none!important}',
+        '.settings-dialog[data-orientation="vertical"] [role="tablist"]::-webkit-scrollbar{display:none}',
+        '.settings-dialog[data-orientation="vertical"] [role="tab"]{width:100%!important;padding:14px 20px!important;font-size:16px!important;border-radius:0!important;border-bottom:.5px solid rgba(255,255,255,.06)!important;display:flex!important;align-items:center!important;gap:12px!important;justify-content:flex-start!important}',
+        '.settings-dialog[data-orientation="vertical"] [role="tab"]:active{background:rgba(255,255,255,.08)!important}',
+        '.settings-dialog[data-orientation="vertical"] [role="tab"] svg{width:20px!important;height:20px!important;color:var(--v2-icon-icon-muted,#888)!important;flex-shrink:0!important}',
+        '.settings-dialog[data-orientation="vertical"] [role="tabpanel"]{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;z-index:3!important;overflow-y:auto!important;background:var(--v2-background-bg-base,#111)!important;scrollbar-width:none!important;padding:0!important;display:none!important}',
+        '.settings-dialog[data-orientation="vertical"] [role="tabpanel"][data-selected]{display:flex!important;flex-direction:column!important}',
+        // === COMMON ===
         '.settings-v2-nav-footer{padding:16px 20px!important;border-top:.5px solid var(--v2-border-border-base,#333)!important;font-size:12px!important;color:var(--v2-text-text-faint,#666)!important}',
         '.settings-v2-nav-footer span:first-child{display:block!important;margin-bottom:4px!important}',
         '.oc-back-btn{position:sticky!important;top:0!important;z-index:10!important;display:flex!important;align-items:center!important;gap:6px!important;padding:14px 16px!important;border:none!important;background:var(--v2-background-bg-base,#111)!important;border-bottom:.5px solid var(--v2-border-border-base,#333)!important;cursor:pointer!important;color:var(--v2-text-text-accent,#5b9bf5)!important;font-size:15px!important;font-weight:500!important;width:100%!important;text-align:left!important;flex-shrink:0!important;flex-grow:0!important}',
@@ -409,58 +466,73 @@ class MainActivity : AppCompatActivity() {
     });
     _ocImgObs.observe(document.body, {childList:true, subtree:true});
 
-    var _ocShowingContent = false;
+    var _ocMenuVisible = true;
 
-    function ocApplyContentStyles() {
-        if (window.innerWidth > 639) return;
-        var dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+    function ocGetSettingsDialog() {
+        return document.querySelector('[data-component="dialog-v2"][data-variant="settings"]') ||
+               document.querySelector('[data-component="dialog"][data-size="x-large"]');
+    }
+
+    function ocGetTabList(dialog) {
+        return dialog.querySelector('[data-slot="tabs-v2-list"]') ||
+               dialog.querySelector('[role="tablist"]');
+    }
+
+    function ocGetSelectedContent(dialog) {
+        return dialog.querySelector('[data-slot="tabs-v2-content"][data-selected]') ||
+               dialog.querySelector('[role="tabpanel"][data-selected]');
+    }
+
+    function ocGetAllContents(dialog) {
+        return dialog.querySelectorAll('[data-slot="tabs-v2-content"], [role="tabpanel"]');
+    }
+
+    function ocUpdateDialog(dialog) {
         if (!dialog) return;
-        var list = dialog.querySelector('[data-slot="tabs-v2-list"]');
-        var target = dialog.querySelector('[data-slot="tabs-v2-content"][data-selected]');
-        if (!target) return;
+        var list = ocGetTabList(dialog);
 
-        if (_ocShowingContent) {
-            if (list) list.style.setProperty('display', 'none', 'important');
-            target.style.setProperty('display', 'flex', 'important');
-            target.style.setProperty('flex-direction', 'column', 'important');
-            target.style.setProperty('overflow-y', 'auto', 'important');
-            target.style.setProperty('position', 'absolute', 'important');
-            target.style.setProperty('inset', '0', 'important');
-            target.style.setProperty('width', '100%', 'important');
-            target.style.setProperty('height', '100%', 'important');
-            target.style.setProperty('box-sizing', 'border-box', 'important');
-            if (!target.querySelector('.oc-back-btn')) {
-                var back = document.createElement('button');
-                back.type = 'button';
-                back.className = 'oc-back-btn';
-                back.innerHTML = '\u2190 Back';
-                back.onclick = function(ev) {
-                    ev.preventDefault();
-                    ev.stopPropagation();
-                    _ocShowingContent = false;
-                    ocApplyContentStyles();
-                };
-                target.insertBefore(back, target.firstChild);
-            }
-        } else {
-            var contents = dialog.querySelectorAll('[data-slot="tabs-v2-content"]');
-            contents.forEach(function(c) {
-                c.style.setProperty('display', 'none', 'important');
-            });
-            if (list) {
-                list.style.setProperty('display', 'flex', 'important');
-                list.style.setProperty('flex-direction', 'column', 'important');
-            }
-            var oldBack = target.querySelector('.oc-back-btn');
-            if (oldBack) oldBack.remove();
+        if (_ocMenuVisible) {
+            if (list) { list.style.setProperty('display', 'flex', 'important'); list.style.setProperty('flex-direction', 'column', 'important'); list.style.setProperty('position', 'absolute', 'important'); list.style.setProperty('inset', '0', 'important'); list.style.setProperty('width', '100%', 'important'); list.style.setProperty('height', '100%', 'important'); list.style.setProperty('z-index', '2', 'important'); list.style.setProperty('padding', '8px 0', 'important'); list.style.setProperty('overflow-y', 'auto', 'important'); list.style.setProperty('background', 'var(--v2-background-bg-base,#111)', 'important'); }
+            ocGetAllContents(dialog).forEach(function(c) { c.style.setProperty('display', 'none', 'important'); });
+            ocGetAllContents(dialog).forEach(function(c) { var b = c.querySelector('.oc-back-btn'); if (b) b.remove(); });
             ocInjectMenuHeader(dialog);
+        } else {
+            if (list) list.style.setProperty('display', 'none', 'important');
+            var target = ocGetSelectedContent(dialog);
+            ocGetAllContents(dialog).forEach(function(c) { if (c !== target) c.style.setProperty('display', 'none', 'important'); });
+            if (target) {
+                target.style.removeProperty('display');
+                target.style.setProperty('display', 'flex', 'important');
+                target.style.setProperty('flex-direction', 'column', 'important');
+                target.style.setProperty('position', 'absolute', 'important');
+                target.style.setProperty('inset', '0', 'important');
+                target.style.setProperty('width', '100%', 'important');
+                target.style.setProperty('height', '100%', 'important');
+                target.style.setProperty('z-index', '3', 'important');
+                target.style.setProperty('overflow-y', 'auto', 'important');
+                target.style.setProperty('background', 'var(--v2-background-bg-base,#111)', 'important');
+                if (!target.querySelector('.oc-back-btn')) {
+                    var back = document.createElement('button');
+                    back.type = 'button';
+                    back.className = 'oc-back-btn';
+                    back.innerHTML = '\u2190 Back';
+                    back.onclick = function(ev) {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        _ocMenuVisible = true;
+                        var dlg = ocGetSettingsDialog();
+                        if (dlg) ocUpdateDialog(dlg);
+                    };
+                    target.insertBefore(back, target.firstChild);
+                }
+            }
         }
     }
 
     function ocInjectMenuHeader(dialog) {
-        if (!dialog) dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+        if (!dialog) dialog = ocGetSettingsDialog();
         if (!dialog) return;
-        var list = dialog.querySelector('[data-slot="tabs-v2-list"]');
+        var list = ocGetTabList(dialog);
         if (!list || list.querySelector('.oc-menu-header')) return;
 
         var hdr = document.createElement('div');
@@ -491,16 +563,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     window.ocSettingsBack = function() {
-        if (_ocShowingContent) {
-            _ocShowingContent = false;
-            ocApplyContentStyles();
+        if (!_ocMenuVisible) {
+            _ocMenuVisible = true;
+            var dlg = ocGetSettingsDialog();
+            if (dlg) ocUpdateDialog(dlg);
             return true;
         }
         return false;
     };
 
     window.ocIsSettingsOpen = function() {
-        var dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+        var dialog = ocGetSettingsDialog();
         if (!dialog) return false;
         var c = dialog.querySelector('[role="dialog"]');
         if (!c) c = dialog;
@@ -509,7 +582,8 @@ class MainActivity : AppCompatActivity() {
 
     var _ocObs = new MutationObserver(function() {
         if (window.innerWidth > 639) return;
-        ocApplyContentStyles();
+        var dialog = ocGetSettingsDialog();
+        if (dialog) ocUpdateDialog(dialog);
     });
     _ocObs.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['data-selected']});
 
@@ -517,58 +591,40 @@ class MainActivity : AppCompatActivity() {
         if (window.innerWidth > 639) return;
         var tab = e.target.closest('[role="tab"]');
         if (!tab) return;
-        var dialog = tab.closest('[data-component="dialog-v2"][data-variant="settings"]');
+        var dialog = tab.closest('[data-component="dialog-v2"][data-variant="settings"]') ||
+                     tab.closest('[data-component="dialog"]');
         if (!dialog) return;
-        _ocShowingContent = true;
-        setTimeout(function() { ocApplyContentStyles(); }, 200);
+        _ocMenuVisible = false;
+        setTimeout(function() { ocUpdateDialog(dialog); }, 200);
     }, true);
 
     var _ocInit = setInterval(function() {
-        var dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+        var dialog = ocGetSettingsDialog();
         if (!dialog) return;
         if (window.innerWidth > 639) { clearInterval(_ocInit); return; }
         clearInterval(_ocInit);
-        _ocShowingContent = false;
-        ocApplyContentStyles();
+        _ocMenuVisible = true;
+        ocUpdateDialog(dialog);
     }, 100);
 
-    // === RE-INJECT on dialog re-render (e.g. layout toggle) ===
-    var _ocDialogObs = new MutationObserver(function(mutations) {
+    // === PERMANENT RE-INJECT via MutationObserver ===
+    var _ocLastDialog = null;
+    var _ocPermObs = new MutationObserver(function() {
         if (window.innerWidth > 639) return;
-        var dialog = document.querySelector('[data-component="dialog-v2"][data-variant="settings"]');
+        var dialog = ocGetSettingsDialog();
         if (!dialog) return;
-        if (!dialog.querySelector('.oc-menu-header')) {
-            _ocShowingContent = false;
-            ocApplyContentStyles();
+        if (dialog !== _ocLastDialog) {
+            _ocLastDialog = dialog;
+            _ocMenuVisible = true;
+            ocUpdateDialog(dialog);
+        } else if (!dialog.querySelector('.oc-menu-header')) {
+            _ocMenuVisible = true;
+            ocUpdateDialog(dialog);
         }
     });
-    _ocDialogObs.observe(document.body, {childList:true, subtree:true});
+    _ocPermObs.observe(document.body, {childList:true, subtree:true, attributes:true});
 
-    // === OPEN PROJECT: always show "/" ===
-    var _ocProjectObs = new MutationObserver(function(mutations) {
-        mutations.forEach(function(m) {
-            m.addedNodes.forEach(function(node) {
-                if (node.nodeType !== 1) return;
-                var dialogs = node.querySelectorAll ? node.querySelectorAll('[role="dialog"], [data-component="dialog"]') : [];
-                dialogs.forEach(function(dlg) {
-                    var text = dlg.textContent || '';
-                    if (text.includes('Open Project') || text.includes('Select') || text.includes('directory') || text.includes('folder')) {
-                        var inputs = dlg.querySelectorAll('input[type="text"], input:not([type])');
-                        inputs.forEach(function(input) {
-                            if (!input.dataset.ocRootAdded) {
-                                input.dataset.ocRootAdded = 'true';
-                                input.placeholder = 'Enter path (e.g. / )';
-                                if (!input.value) input.value = '/';
-                            }
-                        });
-                    }
-                });
-            });
-        });
-    });
-    _ocProjectObs.observe(document.body, {childList:true, subtree:true});
-
-    // === FOLDER PICKER ===
+    // === FOLDER PICKER: intercept Add Project button ===
     window.__folderPickerResult = null;
     window.openFolderPicker = function() {
         return new Promise(function(resolve) {
@@ -579,37 +635,72 @@ class MainActivity : AppCompatActivity() {
         });
     };
 
-    var _ocDirObs = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            mutation.addedNodes.forEach(function(node) {
-                if (node.nodeType === 1) {
-                    var dialogs = node.querySelectorAll ? node.querySelectorAll('[role="dialog"], [data-component="dialog"]') : [];
-                    dialogs.forEach(function(dialog) {
-                        var text = dialog.textContent || '';
-                        if (text.includes('Open Project') || text.includes('Select') || text.includes('directory') || text.includes('folder')) {
-                            var inputs = dialog.querySelectorAll('input[type="text"], input:not([type])');
-                            inputs.forEach(function(input) {
-                                if (!input.dataset.androidPickerAdded) {
-                                    input.dataset.androidPickerAdded = 'true';
-                                    var btn = document.createElement('button');
-                                    btn.textContent = '\uD83D\uDCF1 Pick folder';
-                                    btn.style.cssText = 'margin-left:8px;padding:4px 8px;background:#3b5cf6;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px';
-                                    btn.onclick = function() {
-                                        window.openFolderPicker().then(function(path) {
-                                            if (path) {
-                                                input.value = path;
-                                                input.dispatchEvent(new Event('input', {bubbles:true}));
-                                                input.dispatchEvent(new Event('change', {bubbles:true}));
-                                            }
-                                        });
-                                    };
-                                    input.parentNode.insertBefore(btn, input.nextSibling);
+    function ocBase64Url(str) {
+        var bytes = new TextEncoder().encode(str);
+        var binary = Array.from(bytes, function(b) { return String.fromCharCode(b); }).join('');
+        return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=/g, '');
+    }
+
+    function ocOpenProjectAndroid(path) {
+        var key = 'opencode.global.dat:server';
+        var data = {};
+        try { data = JSON.parse(localStorage.getItem(key) || '{}'); } catch(e) {}
+        if (!data.projects) data.projects = {};
+        if (!data.projects.local) data.projects.local = [];
+        var exists = data.projects.local.some(function(p) { return p.worktree === path; });
+        if (!exists) {
+            data.projects.local.unshift({ worktree: path, expanded: true });
+        }
+        if (!data.lastProject) data.lastProject = {};
+        data.lastProject.local = path;
+        localStorage.setItem(key, JSON.stringify(data));
+        window.location.reload();
+    }
+
+    function ocInterceptAddProject(e) {
+        var btn = e.target.closest('button');
+        if (!btn) return;
+        var isAddBtn = btn.getAttribute('data-action') === 'home-add-project' ||
+                       btn.getAttribute('aria-label') === 'Add project' ||
+                       btn.getAttribute('aria-label') === '\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043F\u0440\u043E\u0435\u043A\u0442';
+        if (!isAddBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.openFolderPicker().then(function(path) {
+            if (path) {
+                ocOpenProjectAndroid(path);
+            }
+        });
+        return false;
+    }
+    document.addEventListener('click', ocInterceptAddProject, true);
+
+    // === FOLDER PICKER: inside dialog ===
+    var _ocDirObs = new MutationObserver(function() {
+        var dialogs = document.querySelectorAll('[role="dialog"], [data-component="dialog"]');
+        dialogs.forEach(function(dialog) {
+            var text = dialog.textContent || '';
+            if (text.includes('Open Project') || text.includes('Select') || text.includes('directory') || text.includes('folder') || text.includes('project')) {
+                var inputs = dialog.querySelectorAll('input[type="text"], input:not([type])');
+                inputs.forEach(function(input) {
+                    if (!input.dataset.androidPickerAdded) {
+                        input.dataset.androidPickerAdded = 'true';
+                        var btn = document.createElement('button');
+                        btn.textContent = '\uD83D\uDCF1 Pick folder';
+                        btn.style.cssText = 'margin-left:8px;padding:4px 8px;background:#3b5cf6;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px';
+                        btn.onclick = function() {
+                            window.openFolderPicker().then(function(path) {
+                                if (path) {
+                                    input.value = path;
+                                    input.dispatchEvent(new Event('input', {bubbles:true}));
+                                    input.dispatchEvent(new Event('change', {bubbles:true}));
                                 }
                             });
-                        }
-                    });
-                }
-            });
+                        };
+                        input.parentNode.insertBefore(btn, input.nextSibling);
+                    }
+                });
+            }
         });
     });
     _ocDirObs.observe(document.body, {childList:true, subtree:true});
@@ -651,11 +742,10 @@ class MainActivity : AppCompatActivity() {
                     request: WebResourceRequest?,
                     error: WebResourceError?
                 ) {
-                    if (request?.isForMainFrame == true) {
-                        view?.postDelayed({
-                            view.reload()
-                        }, 3000)
-                    }
+                    val url = request?.url?.toString() ?: ""
+                    val desc = error?.description ?: ""
+                    val code = error?.errorCode ?: -1
+                    android.util.Log.e("WV_ERR", "code=$code desc=$desc url=$url")
                 }
 
                 override fun onReceivedHttpError(
@@ -663,11 +753,9 @@ class MainActivity : AppCompatActivity() {
                     request: WebResourceRequest?,
                     errorResponse: WebResourceResponse?
                 ) {
-                    if (request?.isForMainFrame == true) {
-                        view?.postDelayed({
-                            view.reload()
-                        }, 3000)
-                    }
+                    val url = request?.url?.toString() ?: ""
+                    val status = errorResponse?.statusCode ?: 0
+                    android.util.Log.e("WV_ERR", "http=$status url=$url")
                 }
 
                 override fun shouldOverrideUrlLoading(
@@ -684,7 +772,18 @@ class MainActivity : AppCompatActivity() {
 
             webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-                    android.util.Log.d("WebView", consoleMessage?.message() ?: "")
+                    val msg = consoleMessage?.message() ?: return true
+                    val level = consoleMessage?.messageLevel() ?: ConsoleMessage.MessageLevel.LOG
+                    val source = consoleMessage?.sourceId() ?: ""
+                    val line = consoleMessage?.lineNumber() ?: 0
+                    val shortSource = source.removePrefix(serverUrl).take(80)
+                    when (level) {
+                        ConsoleMessage.MessageLevel.ERROR -> android.util.Log.e("WV_JS", "$shortSource:$line $msg")
+                        ConsoleMessage.MessageLevel.WARNING -> android.util.Log.w("WV_JS", "$shortSource:$line $msg")
+                        ConsoleMessage.MessageLevel.DEBUG -> android.util.Log.d("WV_JS", "$shortSource:$line $msg")
+                        ConsoleMessage.MessageLevel.TIP -> android.util.Log.i("WV_JS", "$shortSource:$line $msg")
+                        else -> android.util.Log.i("WV_JS", "$shortSource:$line $msg")
+                    }
                     return true
                 }
 

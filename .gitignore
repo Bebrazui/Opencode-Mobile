@@ -17,3 +17,5 @@
 # Log files
 *.log
 app/src/main/assets/opencode-server
+app/src/main/assets/web-ui.zip
+app/src/main/assets/alpine.rootfs
