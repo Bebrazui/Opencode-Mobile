@@ -778,8 +778,10 @@ class MainActivity : AppCompatActivity() {
                                 c.requestMethod = "GET"
                                 c.connectTimeout = 8000
                                 c.readTimeout = 8000
-                                val body = c.inputStream.bufferedReader().readText().take(1000)
-                                android.util.Log.e("API_LOG", "ERRBODY $url -> $body")
+                                val code = c.responseCode
+                                val stream = if (code >= 400) c.errorStream else c.inputStream
+                                val body = stream?.bufferedReader()?.readText()?.take(1000) ?: ""
+                                android.util.Log.e("API_LOG", "ERRBODY($code) $url -> $body")
                             } catch (e: Exception) {
                                 android.util.Log.e("API_LOG", "ERRBODYFAIL $url ${e.message}")
                             }
