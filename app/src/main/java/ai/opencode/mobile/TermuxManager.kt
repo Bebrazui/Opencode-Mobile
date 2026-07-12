@@ -218,9 +218,16 @@ class TermuxManager(private val context: Context) {
         // Extract web UI files for offline serving (zip via Java)
         val webDir = File(context.filesDir, "web")
         val webIndex = File(webDir, "index.html")
-        if (!webIndex.exists()) {
-            log("Extracting web-ui.zip...")
+        val assetsPrefs = context.getSharedPreferences("opencode_assets", 0)
+        val zipLen = runCatching {
+            context.assets.openFd("web-ui.zip").use { it.length }
+        }.getOrElse { -1L }
+        val storedZipLen = assetsPrefs.getLong("web_ui_zip_len", -1L)
+        val needsExtract = !webIndex.exists() || zipLen != storedZipLen
+        if (needsExtract) {
+            log("Extracting web-ui.zip (zipLen=$zipLen stored=$storedZipLen)...")
             try {
+                webDir.deleteRecursively()
                 webDir.mkdirs()
                 java.util.zip.ZipInputStream(context.assets.open("web-ui.zip")).use { zis ->
                     var entry = zis.nextEntry
@@ -233,6 +240,7 @@ class TermuxManager(private val context: Context) {
                         entry = zis.nextEntry
                     }
                 }
+                assetsPrefs.edit().putLong("web_ui_zip_len", zipLen).apply()
                 log("Web UI extracted to $webDir (${webDir.listFiles()?.size ?: 0} files)")
             } catch (e: Exception) {
                 logErr("Failed to extract web-ui: ${e.message}")
