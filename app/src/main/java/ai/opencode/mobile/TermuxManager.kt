@@ -29,6 +29,9 @@ class TermuxManager(private val context: Context) {
     private val nativeLibDir get() = context.applicationInfo.nativeLibraryDir
 
     private val logFile by lazy { File(context.filesDir, "termux.log") }
+    private val serverLogFile by lazy {
+        File(context.getExternalFilesDir(null) ?: context.filesDir, "server.log")
+    }
     private fun log(msg: String) {
         android.util.Log.d(TAG, msg)
         try { logFile.appendText("${System.currentTimeMillis()} $msg\n") } catch (_: Exception) {}
@@ -81,6 +84,7 @@ class TermuxManager(private val context: Context) {
     fun start(projectPath: String) {
         if (isRunning()) return
 
+        try { serverLogFile.delete() } catch (_: Exception) {}
         scope.launch {
             try {
                 log("=== start projectPath=$projectPath ===")
@@ -290,6 +294,8 @@ class TermuxManager(private val context: Context) {
                         newText.lines().forEach { line ->
                             if (line.isNotBlank()) {
                                 log("TERM: $line")
+                                android.util.Log.d("OC_SERVER", line)
+                                try { serverLogFile.appendText("$line\n") } catch (_: Exception) {}
                                 // Detect server ready from opencode-server output
                                 if (line.contains("opencode-server listening on")) {
                                     serverReady = true
