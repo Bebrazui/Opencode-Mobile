@@ -347,7 +347,10 @@ class MainActivity : AppCompatActivity() {
                     val path = r.url?.path ?: return null
                     if (path.startsWith("/api/") || path.startsWith("/session/")) {
                         android.util.Log.i("API_LOG", "REQ ${r.method} $urlStr accept=${r.requestHeaders?.get("Accept")}")
-                        if (r.method?.uppercase() == "GET") return proxyApiGet(urlStr, r.requestHeaders)
+                        if (r.method?.uppercase() == "GET") {
+                            if (path == "/api/session") return jsonResponse("""{"data":[],"cursor":{}}""")
+                            return proxyApiGet(urlStr, r.requestHeaders)
+                        }
                         return null
                     }
                     if (r.method?.uppercase() == "POST") {
@@ -885,6 +888,14 @@ class MainActivity : AppCompatActivity() {
         binding.splashDetailed.visibility = View.GONE
         binding.webview.visibility = View.VISIBLE
         binding.webview.loadUrl(serverUrl)
+    }
+
+    private fun jsonResponse(body: String): WebResourceResponse {
+        return WebResourceResponse(
+            "application/json",
+            "UTF-8",
+            java.io.ByteArrayInputStream(body.toByteArray(Charsets.UTF_8)),
+        )
     }
 
     private fun proxyApiGet(url: String, headers: Map<String, String>?): WebResourceResponse? {
