@@ -347,6 +347,7 @@ class MainActivity : AppCompatActivity() {
                     val path = r.url?.path ?: return null
                     if (path.startsWith("/api/") || path.startsWith("/session/")) {
                         android.util.Log.i("API_LOG", "REQ ${r.method} $urlStr accept=${r.requestHeaders?.get("Accept")}")
+                        if (r.method?.uppercase() == "GET") return proxyApiGet(urlStr, r.requestHeaders)
                         return null
                     }
                     if (r.method?.uppercase() == "POST") {
@@ -884,6 +885,32 @@ class MainActivity : AppCompatActivity() {
         binding.splashDetailed.visibility = View.GONE
         binding.webview.visibility = View.VISIBLE
         binding.webview.loadUrl(serverUrl)
+    }
+
+    private fun proxyApiGet(url: String, headers: Map<String, String>?): WebResourceResponse? {
+        return try {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("Accept-Encoding", "identity")
+            headers?.forEach { (k, v) ->
+                if (!k.equals("Accept-Encoding", ignoreCase = true)) conn.setRequestProperty(k, v)
+            }
+            conn.connectTimeout = 15000
+            conn.readTimeout = 0
+            val code = conn.responseCode
+            val ctype = conn.contentType ?: ""
+            android.util.Log.i("API_LOG", "RESP $code ctype=$ctype url=$url")
+            if (ctype.contains("text/html", ignoreCase = true)) {
+                val bytes = try { conn.inputStream.readBytes() } catch (_: Exception) { ByteArray(0) }
+                android.util.Log.e("API_LOG", "RESHTML $url -> ${String(bytes, Charsets.UTF_8).take(800)}")
+                return WebResourceResponse(ctype, conn.contentEncoding ?: "UTF-8", java.io.ByteArrayInputStream(bytes))
+            }
+            val stream = if (code >= 400) conn.errorStream else conn.inputStream
+            WebResourceResponse(ctype, conn.contentEncoding ?: "UTF-8", stream)
+        } catch (e: Exception) {
+            android.util.Log.e("API_LOG", "PROXYFAIL $url ${e.message}")
+            null
+        }
     }
 
     override fun onResume() {
