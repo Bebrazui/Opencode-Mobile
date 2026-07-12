@@ -345,8 +345,14 @@ class MainActivity : AppCompatActivity() {
                     val host = r.url?.host ?: return null
                     if (host != "127.0.0.1" && host != "localhost") return null
                     val path = r.url?.path ?: return null
-                    if (path.startsWith("/api/") || path.startsWith("/session/")) return null
-                    if (r.method?.uppercase() == "POST") return null
+                    if (path.startsWith("/api/") || path.startsWith("/session/")) {
+                        android.util.Log.i("API_LOG", "REQ ${r.method} $urlStr accept=${r.requestHeaders?.get("Accept")}")
+                        return null
+                    }
+                    if (r.method?.uppercase() == "POST") {
+                        android.util.Log.i("API_LOG", "REQ ${r.method} $urlStr")
+                        return null
+                    }
                     val webDir = java.io.File(filesDir, "web")
                     if (!webDir.exists()) return null
                     val rel = path.trimStart('/')
@@ -761,7 +767,24 @@ class MainActivity : AppCompatActivity() {
                 ) {
                     val url = request?.url?.toString() ?: ""
                     val status = errorResponse?.statusCode ?: 0
-                    android.util.Log.e("WV_ERR", "http=$status url=$url")
+                    val ctype = errorResponse?.mimeType ?: "?"
+                    android.util.Log.e("API_LOG", "ERR http=$status ctype=$ctype url=$url")
+                    if ((url.contains("127.0.0.1") || url.contains("localhost")) &&
+                        request?.method?.uppercase() == "GET"
+                    ) {
+                        Thread {
+                            try {
+                                val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                                c.requestMethod = "GET"
+                                c.connectTimeout = 8000
+                                c.readTimeout = 8000
+                                val body = c.inputStream.bufferedReader().readText().take(1000)
+                                android.util.Log.e("API_LOG", "ERRBODY $url -> $body")
+                            } catch (e: Exception) {
+                                android.util.Log.e("API_LOG", "ERRBODYFAIL $url ${e.message}")
+                            }
+                        }.start()
+                    }
                 }
 
                 override fun shouldOverrideUrlLoading(
