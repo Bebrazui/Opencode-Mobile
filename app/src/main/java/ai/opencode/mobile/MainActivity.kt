@@ -914,7 +914,7 @@ class MainActivity : AppCompatActivity() {
             if (ctype.contains("text/html", ignoreCase = true)) {
                 val bytes = try { conn.inputStream.readBytes() } catch (_: Exception) { ByteArray(0) }
                 android.util.Log.e("API_LOG", "RESHTML $url -> ${String(bytes, Charsets.UTF_8).take(800)}")
-                return WebResourceResponse(ctype, conn.contentEncoding ?: "UTF-8", java.io.ByteArrayInputStream(bytes))
+                return jsonResponse("{}")
             }
             val stream = if (code >= 400) conn.errorStream else conn.inputStream
             WebResourceResponse(ctype, conn.contentEncoding ?: "UTF-8", stream)
