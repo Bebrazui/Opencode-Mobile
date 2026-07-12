@@ -344,6 +344,7 @@ class MainActivity : AppCompatActivity() {
                     val urlStr = r.url?.toString() ?: return null
                     val host = r.url?.host ?: return null
                     if (host != "127.0.0.1" && host != "localhost") return null
+<<<<<<< HEAD
                     val path = r.url?.path ?: return null
                     if (path.startsWith("/api/") || path.startsWith("/session/")) {
                         android.util.Log.i("API_LOG", "REQ ${r.method} $urlStr accept=${r.requestHeaders?.get("Accept")}")
@@ -380,6 +381,18 @@ class MainActivity : AppCompatActivity() {
                     val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
                         ?: if (ext == "js") "application/javascript" else "application/octet-stream"
                     return WebResourceResponse(mime, "UTF-8", file.inputStream())
+=======
+                    if (r.method?.uppercase() == "POST") return null
+                    val path = r.url?.path ?: return null
+                    // /api/reference падает на сервере (сканирует папку вне alpine) -> 500.
+                    // Отдаём пустой список, чтобы UI не ломался и модели отвечали.
+                    if (path == "/api/reference") return referenceSafe(urlStr, r.requestHeaders)
+                    // API и SSE идут напрямую на локальный сервер (работает и офлайн).
+                    if (!isUiPath(path)) return null
+                    // UI: онлайн сервер проксирует к app.opencode.ai и кэшируется;
+                    // офлайн отдаётся из кэша на диске.
+                    return serveUiFromCache(urlStr, path, r.requestHeaders)
+>>>>>>> 4c47009 (WORKS WITHOUT INTERNET AND ON MOBILE NETWORK)
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -858,6 +871,87 @@ class MainActivity : AppCompatActivity() {
         fun notifyTaskComplete(title: String, text: String) {
             termuxManager.sendTaskCompleteNotification(title, text)
         }
+    }
+
+    // Только UI (HTML/CSS/JS/assets) кэшируется на диск. API и SSE идут на
+    // локальный сервер (работает офлайн), как в рабочей сборке.
+    private fun isUiPath(path: String): Boolean {
+        if (path == "/" || path == "/index.html") return true
+        if (path.startsWith("/assets/")) return true
+        val ext = path.substringAfterLast('.', "")
+        return ext in setOf("html", "css", "js", "png", "svg", "ico", "webmanifest", "woff", "woff2", "ttf", "eot")
+    }
+
+    // Кэшируем UI, который сервер проксирует с app.opencode.ai. Первая загрузка
+    // при интернете наполняет filesDir/uicache; офлайн отдаём из кэша.
+    private fun serveUiFromCache(url: String, path: String, headers: Map<String, String>?): WebResourceResponse? {
+        val cacheDir = java.io.File(filesDir, "uicache")
+        val rel = if (path == "/" || path.isEmpty()) "index.html" else path.trimStart('/')
+        val cacheFile = java.io.File(cacheDir, rel)
+        if (cacheFile.exists() && cacheFile.isFile) return fileResponse(cacheFile)
+        return try {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("Accept-Encoding", "identity")
+            conn.connectTimeout = 15000
+            conn.readTimeout = 60000
+            headers?.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+            val code = conn.responseCode
+            val ctype = conn.contentType ?: ""
+            val isMain = path == "/" || path == "/index.html"
+            if (code == 200 && (isMain || !ctype.contains("text/html", ignoreCase = true))) {
+                val bytes = conn.inputStream.readBytes()
+                try {
+                    cacheFile.parentFile?.mkdirs()
+                    cacheFile.outputStream().use { it.write(bytes) }
+                } catch (_: Exception) {}
+                val rawMime = if (ctype.isBlank()) mimeOf(cacheFile) else ctype
+                val base = rawMime.substringBefore(";").trim().lowercase()
+                val mime = if (base == "text/javascript" || base == "application/x-javascript" || base.endsWith("/javascript")) "application/javascript" else base
+                WebResourceResponse(mime, "UTF-8", java.io.ByteArrayInputStream(bytes))
+            } else {
+                if (cacheFile.exists()) fileResponse(cacheFile) else null
+            }
+        } catch (e: Exception) {
+            if (cacheFile.exists()) fileResponse(cacheFile) else null
+        }
+    }
+
+    // /api/reference падает на сервере (сканирует папку вне alpine). Проксируем
+    // на локальный сервер, при ошибке/500 отдаём пустой список.
+    private fun referenceSafe(url: String, headers: Map<String, String>?): WebResourceResponse? {
+        return try {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 15000
+            conn.readTimeout = 30000
+            headers?.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+            if (conn.responseCode == 200) {
+                val bytes = conn.inputStream.readBytes()
+                WebResourceResponse("application/json", "UTF-8", java.io.ByteArrayInputStream(bytes))
+            } else {
+                referenceEmpty()
+            }
+        } catch (_: Exception) {
+            referenceEmpty()
+        }
+    }
+
+    private fun referenceEmpty(): WebResourceResponse {
+        return WebResourceResponse("application/json", "UTF-8", java.io.ByteArrayInputStream("[]".toByteArray()))
+    }
+
+    private fun fileResponse(file: java.io.File): WebResourceResponse {
+        val ext = file.extension.lowercase()
+        val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+            ?: if (ext == "js") "application/javascript" else "application/octet-stream"
+        return WebResourceResponse(mime, "UTF-8", file.inputStream())
+    }
+
+    private fun mimeOf(file: java.io.File): String {
+        val ext = file.extension.lowercase()
+        return android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+            ?: if (ext == "js") "application/javascript" else "application/octet-stream"
     }
 
     private fun getPathFromUri(uri: Uri): String? {

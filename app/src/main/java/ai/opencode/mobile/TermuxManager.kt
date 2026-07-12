@@ -219,39 +219,9 @@ class TermuxManager(private val context: Context) {
             log("opencode-server already extracted (${serverFile.length()} bytes)")
         }
 
-        // Extract web UI files for offline serving (zip via Java)
-        val webDir = File(context.filesDir, "web")
-        val webIndex = File(webDir, "index.html")
-        val assetsPrefs = context.getSharedPreferences("opencode_assets", 0)
-        val zipLen = runCatching {
-            context.assets.openFd("web-ui.zip").use { it.length }
-        }.getOrElse { -1L }
-        val storedZipLen = assetsPrefs.getLong("web_ui_zip_len", -1L)
-        val needsExtract = !webIndex.exists() || zipLen != storedZipLen
-        if (needsExtract) {
-            log("Extracting web-ui.zip (zipLen=$zipLen stored=$storedZipLen)...")
-            try {
-                webDir.deleteRecursively()
-                webDir.mkdirs()
-                java.util.zip.ZipInputStream(context.assets.open("web-ui.zip")).use { zis ->
-                    var entry = zis.nextEntry
-                    while (entry != null) {
-                        if (!entry.isDirectory) {
-                            val outFile = File(webDir, entry.name)
-                            outFile.parentFile?.mkdirs()
-                            outFile.outputStream().use { out -> zis.copyTo(out) }
-                        }
-                        entry = zis.nextEntry
-                    }
-                }
-                assetsPrefs.edit().putLong("web_ui_zip_len", zipLen).apply()
-                log("Web UI extracted to $webDir (${webDir.listFiles()?.size ?: 0} files)")
-            } catch (e: Exception) {
-                logErr("Failed to extract web-ui: ${e.message}")
-            }
-        } else {
-            log("Web UI already extracted")
-        }
+        // UI не локальная: грузится с локального сервера (он проксирует
+        // app.opencode.ai), ответы кэшируются на диск в MainActivity (uicache).
+        // Локальный web-ui.zip не используется.
 
         val libtalloc2 = File(binDir, "libtalloc.so.2")
         try { libtalloc2.delete() } catch (_: Exception) {}
@@ -296,8 +266,9 @@ class TermuxManager(private val context: Context) {
                                 log("TERM: $line")
                                 android.util.Log.d("OC_SERVER", line)
                                 try { serverLogFile.appendText("$line\n") } catch (_: Exception) {}
-                                // Detect server ready from opencode-server output
-                                if (line.contains("opencode-server listening on")) {
+                                // Detect server ready (covers both `opencode-server listening on`
+                                // from the default entry and `opencode server listening on` from `serve`)
+                                if (line.contains("listening on")) {
                                     serverReady = true
                                     // Extract port from line like "opencode-server listening on http://0.0.0.0:4096"
                                     val portMatch = Regex(":(\\d+)").find(line)
@@ -374,7 +345,7 @@ class TermuxManager(private val context: Context) {
             "echo [ALPINE] Starting opencode-server...; " +
             "chmod +x $P/bin/opencode-server 2>/dev/null; " +
             "cd /; " +
-            "OPENCODE_HOST=0.0.0.0 OPENCODE_PORT=4096 OPENCODE_DIR=/root $P/bin/opencode-server 2>&1 | tee /root/opencode-server.log & " +
+            "OPENCODE_HOST=0.0.0.0 OPENCODE_PORT=4096 OPENCODE_DIR=/root $P/bin/opencode-server serve --hostname 0.0.0.0 --port 4096 2>&1 | tee /root/opencode-server.log & " +
             "exec /bin/bash --rcfile /etc/profile -i'"
 
         log("CMD: $cmd")
