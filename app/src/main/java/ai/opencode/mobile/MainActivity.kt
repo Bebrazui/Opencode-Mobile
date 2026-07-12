@@ -353,10 +353,16 @@ class MainActivity : AppCompatActivity() {
                     val file = if (rel.isEmpty() || rel == "index.html") java.io.File(webDir, "index.html")
                                else java.io.File(webDir, rel)
                     if (!file.exists() || !file.isFile) {
-                        val fallback = java.io.File(webDir, "index.html")
-                        if (fallback.exists()) {
-                            val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension("html") ?: "text/html"
-                            return WebResourceResponse(mime, "UTF-8", fallback.inputStream())
+                        // SPA navigation fallback: serve index.html for extension-less routes.
+                        // Missing static assets (js/css/font/...) are passed through so the server
+                        // proxies them to app.opencode.ai (and WebView caches them for offline).
+                        val isStaticAsset = rel.contains('.')
+                        if (!isStaticAsset) {
+                            val fallback = java.io.File(webDir, "index.html")
+                            if (fallback.exists()) {
+                                val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension("html") ?: "text/html"
+                                return WebResourceResponse(mime, "UTF-8", fallback.inputStream())
+                            }
                         }
                         return null
                     }
