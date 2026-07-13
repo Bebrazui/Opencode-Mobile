@@ -344,44 +344,6 @@ class MainActivity : AppCompatActivity() {
                     val urlStr = r.url?.toString() ?: return null
                     val host = r.url?.host ?: return null
                     if (host != "127.0.0.1" && host != "localhost") return null
-<<<<<<< HEAD
-                    val path = r.url?.path ?: return null
-                    if (path.startsWith("/api/") || path.startsWith("/session/")) {
-                        android.util.Log.i("API_LOG", "REQ ${r.method} $urlStr accept=${r.requestHeaders?.get("Accept")}")
-                        if (r.method?.uppercase() == "GET") {
-                            if (path == "/api/session") return jsonResponse("""{"data":[],"cursor":{}}""")
-                            return proxyApiGet(urlStr, r.requestHeaders)
-                        }
-                        return null
-                    }
-                    if (r.method?.uppercase() == "POST") {
-                        android.util.Log.i("API_LOG", "REQ ${r.method} $urlStr")
-                        return null
-                    }
-                    val webDir = java.io.File(filesDir, "web")
-                    if (!webDir.exists()) return null
-                    val rel = path.trimStart('/')
-                    val file = if (rel.isEmpty() || rel == "index.html") java.io.File(webDir, "index.html")
-                               else java.io.File(webDir, rel)
-                    if (!file.exists() || !file.isFile) {
-                        // SPA navigation fallback: serve index.html for extension-less routes.
-                        // Missing static assets (js/css/font/...) are passed through so the server
-                        // proxies them to app.opencode.ai (and WebView caches them for offline).
-                        val isStaticAsset = rel.contains('.')
-                        if (!isStaticAsset) {
-                            val fallback = java.io.File(webDir, "index.html")
-                            if (fallback.exists()) {
-                                val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension("html") ?: "text/html"
-                                return WebResourceResponse(mime, "UTF-8", fallback.inputStream())
-                            }
-                        }
-                        return null
-                    }
-                    val ext = file.extension.lowercase()
-                    val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
-                        ?: if (ext == "js") "application/javascript" else "application/octet-stream"
-                    return WebResourceResponse(mime, "UTF-8", file.inputStream())
-=======
                     if (r.method?.uppercase() == "POST") return null
                     val path = r.url?.path ?: return null
                     // /api/reference падает на сервере (сканирует папку вне alpine) -> 500.
@@ -392,7 +354,6 @@ class MainActivity : AppCompatActivity() {
                     // UI: онлайн сервер проксирует к app.opencode.ai и кэшируется;
                     // офлайн отдаётся из кэша на диске.
                     return serveUiFromCache(urlStr, path, r.requestHeaders)
->>>>>>> 4c47009 (WORKS WITHOUT INTERNET AND ON MOBILE NETWORK)
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {

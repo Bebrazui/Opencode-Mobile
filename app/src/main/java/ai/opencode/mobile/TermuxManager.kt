@@ -345,7 +345,7 @@ class TermuxManager(private val context: Context) {
             "echo [ALPINE] Starting opencode-server...; " +
             "chmod +x $P/bin/opencode-server 2>/dev/null; " +
             "cd /; " +
-            "OPENCODE_HOST=0.0.0.0 OPENCODE_PORT=4096 OPENCODE_DIR=/root $P/bin/opencode-server serve --hostname 0.0.0.0 --port 4096 2>&1 | tee /root/opencode-server.log & " +
+            "XDG_DATA_HOME=/root/.local/share XDG_CONFIG_HOME=/root/.config XDG_STATE_HOME=/root/.local/state XDG_CACHE_HOME=/root/.cache OPENCODE_HOST=0.0.0.0 OPENCODE_PORT=4096 OPENCODE_DIR=/root $P/bin/opencode-server serve --hostname 0.0.0.0 --port 4096 2>&1 | tee /root/opencode-server.log & " +
             "exec /bin/bash --rcfile /etc/profile -i'"
 
         log("CMD: $cmd")
