@@ -346,6 +346,7 @@ class MainActivity : AppCompatActivity() {
                     if (host != "127.0.0.1" && host != "localhost") return null
                     if (r.method?.uppercase() == "POST") return null
                     val path = r.url?.path ?: return null
+                    android.util.Log.i("OC_REQ", "${r.method} $path")
                     // SSE-поток событий: WebView нативно рвёт долгие SSE (net::ERR_FAILED),
                     // поэтому проксируем через Java-сокет, минуя сетевой стек WebView.
                     if (path == "/global/event" || path == "/event" || path == "/api/event")
@@ -353,6 +354,8 @@ class MainActivity : AppCompatActivity() {
                     // /api/reference падает на сервере (сканирует папку вне alpine) -> 500.
                     // Отдаём пустой список, чтобы UI не ломался и модели отвечали.
                     if (path == "/api/reference") return referenceSafe(urlStr, r.requestHeaders)
+                    // DIAGNOSTIC: проксируем сессии, логируем тело и содержимое БД.
+                    if (path.startsWith("/session")) return debugSessionList(urlStr, r.requestHeaders)
                     // остальной API идёт напрямую на локальный сервер (работает и офлайн).
                     if (!isUiPath(path)) return null
                     // UI: онлайн сервер проксирует к app.opencode.ai и кэшируется;
@@ -923,9 +926,62 @@ class MainActivity : AppCompatActivity() {
             }
             val ctype = conn.contentType ?: "text/event-stream"
             val mime = ctype.substringBefore(";").trim().lowercase().ifBlank { "text/event-stream" }
-            WebResourceResponse(mime, "UTF-8", conn.inputStream)
+            // SSE обязан идти без буферизации; без этих заголовков WebView может
+            // сбуферизировать поток и никогда не отдать события (контент чата пустой).
+            val respHeaders = java.util.HashMap<String, String>()
+            respHeaders["Cache-Control"] = "no-cache"
+            respHeaders["Connection"] = "keep-alive"
+            respHeaders["Content-Type"] = ctype
+            WebResourceResponse(mime, "UTF-8", 200, "OK", respHeaders, conn.inputStream)
         } catch (_: Exception) {
             null
+        }
+    }
+
+    // DIAGNOSTIC: проксирует список сессий, логирует тело и реальное число строк в БД.
+    private fun debugSessionList(url: String, headers: Map<String, String>?): WebResourceResponse? {
+        debugDumpDb()
+        return try {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("Accept-Encoding", "identity")
+            headers?.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+            val code = conn.responseCode
+            val ctype = conn.contentType ?: ""
+            val stream = if (code >= 400) conn.errorStream else conn.inputStream
+            val bytes = stream?.readBytes() ?: ByteArray(0)
+            val body = String(bytes, Charsets.UTF_8)
+            val count = try {
+                org.json.JSONArray(body).length()
+            } catch (_: Exception) { -1 }
+            android.util.Log.i("OC_SESS", "LIST code=$code count=$count body=${body.take(3000)}")
+            WebResourceResponse(ctype.ifBlank { "application/json" }, "UTF-8", java.io.ByteArrayInputStream(bytes))
+        } catch (e: Exception) {
+            android.util.Log.e("OC_SESS", "FAIL ${e.message}")
+            null
+        }
+    }
+
+    // DIAGNOSTIC: читает файл БД напрямую (в обход сервера) и логирует число сессий.
+    private fun debugDumpDb() {
+        val dbFile = java.io.File(filesDir, ".opencode/data/opencode/opencode-dev.db")
+        if (!dbFile.exists()) {
+            android.util.Log.i("OC_DB", "db NOT FOUND at ${dbFile.absolutePath}")
+            return
+        }
+        try {
+            val db = android.database.sqlite.SQLiteDatabase.openDatabase(
+                dbFile.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY
+            )
+            val c = db.rawQuery("SELECT id, title, time_created FROM session ORDER BY time_created DESC", null)
+            val sb = StringBuilder("SESSIONS=${c.count}\n")
+            while (c.moveToNext()) {
+                sb.append("  ${c.getString(0)} | ${c.getString(1)} | ${c.getLong(2)}\n")
+            }
+            c.close(); db.close()
+            android.util.Log.i("OC_DB", sb.toString())
+        } catch (e: Exception) {
+            android.util.Log.e("OC_DB", "ERR ${e.message}")
         }
     }
 

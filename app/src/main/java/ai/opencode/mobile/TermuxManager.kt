@@ -13,6 +13,9 @@ import kotlinx.coroutines.*
 
 class TermuxManager(private val context: Context) {
 
+    // Bump when the bundled opencode-server binary changes (e.g. patched) so it is re-extracted.
+    private val OPENCODE_BINARY_VERSION = 3
+
     private var terminalSession: TerminalSession? = null
     private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     var onStatusChange: ((String) -> Unit)? = null
@@ -29,6 +32,21 @@ class TermuxManager(private val context: Context) {
     private val nativeLibDir get() = context.applicationInfo.nativeLibraryDir
 
     private val logFile by lazy { File(context.filesDir, "termux.log") }
+
+    private fun cleanStaleDbFiles() {
+        try {
+            val root = File(context.filesDir, ".opencode")
+            if (!root.exists()) return
+            root.walkTopDown().forEach { f ->
+                val n = f.name
+                if (f.isFile && (n.endsWith(".db-wal") || n.endsWith(".db-shm") || n.endsWith(".db-journal"))) {
+                    f.delete()
+                    log("removed stale db sidecar: ${f.absolutePath}")
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
     private val serverLogFile by lazy {
         File(context.getExternalFilesDir(null) ?: context.filesDir, "server.log")
     }
@@ -85,6 +103,11 @@ class TermuxManager(private val context: Context) {
         if (isRunning()) return
 
         try { serverLogFile.delete() } catch (_: Exception) {}
+        // Remove stale SQLite sidecar files (*.db-wal/-shm/-journal). Under proot the WAL
+        // shared-memory files from previous (WAL-mode) builds are not checkpointed correctly,
+        // which silently drops already-committed sessions. With journal_mode=OFF the server
+        // writes straight to the main db file, so these sidecars must never linger.
+        cleanStaleDbFiles()
         scope.launch {
             try {
                 log("=== start projectPath=$projectPath ===")
@@ -199,10 +222,14 @@ class TermuxManager(private val context: Context) {
             log("Proot binaries already extracted")
         }
 
-        // Always re-extract opencode-server from assets (check by size)
-        val expectedSize = 140_000_000L
+        // Re-extract opencode-server from assets if missing, size differs, or binary version changed.
+        // Size alone is not enough: a patched binary can keep the original byte size, so we also
+        // gate on a version constant stored in SharedPreferences.
         val serverFile = File(binDir, "opencode-server")
-        if (!serverFile.exists() || serverFile.length() < expectedSize) {
+        val assetSize = runCatching { context.assets.openFd("opencode-server").length }.getOrDefault(0L)
+        val prefs = context.getSharedPreferences("opencode_prefs", Context.MODE_PRIVATE)
+        val extractedVersion = prefs.getInt("opencode_server_version", 0)
+        if (!serverFile.exists() || serverFile.length() != assetSize || extractedVersion != OPENCODE_BINARY_VERSION) {
             log("Extracting opencode-server from assets...")
             try {
                 context.assets.open("opencode-server").use { input ->
@@ -210,6 +237,7 @@ class TermuxManager(private val context: Context) {
                         input.copyTo(output)
                     }
                     serverFile.setExecutable(true)
+                    prefs.edit().putInt("opencode_server_version", OPENCODE_BINARY_VERSION).apply()
                     log("Extracted opencode-server (${serverFile.length()} bytes)")
                 }
             } catch (e: Exception) {
