@@ -7,6 +7,9 @@ import android.content.Intent
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -38,6 +41,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var fileChooserLauncher: ActivityResultLauncher<Intent>
     private lateinit var folderPickerLauncher: ActivityResultLauncher<Intent>
     private var folderPickerCallback: String? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private val logLines = StringBuilder()
 
@@ -147,6 +151,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupWebView()
+        setupNetworkMonitor()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1001)
@@ -329,6 +334,54 @@ class MainActivity : AppCompatActivity() {
     private fun startBackend() {
         val projectPath = getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath
         termuxManager.start(projectPath)
+    }
+
+    private fun setupNetworkMonitor() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onLost(network: Network) {
+                runOnUiThread {
+                    binding.webview.evaluateJavascript(
+                        "window.__ocSetNetwork && window.__ocSetNetwork(false)", null
+                    )
+                }
+            }
+
+            override fun onAvailable(network: Network) {
+                Thread {
+                    val reachable = isLocalServerReachable()
+                    runOnUiThread {
+                        binding.webview.evaluateJavascript(
+                            "window.__ocSetNetwork && window.__ocSetNetwork(true)", null
+                        )
+                        if (termuxManager.isServerReady() && !reachable) startBackend()
+                    }
+                }.start()
+            }
+        }
+        networkCallback = cb
+        cm.registerDefaultNetworkCallback(cb)
+    }
+
+    private fun isNetworkAvailable(cm: ConnectivityManager?): Boolean {
+        if (cm == null) return true
+        val net = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(net) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private fun isLocalServerReachable(): Boolean {
+        return try {
+            val conn = java.net.URL("$serverUrl/").openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.connectTimeout = 3000
+            conn.readTimeout = 3000
+            val code = conn.responseCode
+            conn.disconnect()
+            code in 200..599
+        } catch (_: Exception) {
+            false
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -771,9 +824,44 @@ class MainActivity : AppCompatActivity() {
         });
     });
     _ocMsgObs.observe(document.body, {childList:true, subtree:true});
-})();
+
+    // === NETWORK STATUS (wifi icon + transient toast) ===
+    (function(){
+      if (window.__ocNetReady) return;
+      window.__ocNetReady = true;
+      function wifiSvg(online){
+        var slash = online ? '' : '<line x1="3" y1="3" x2="21" y2="21" stroke="#f85149" stroke-width="2.5"/>';
+        return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="'+(online?'#3fb950':'#f85149')+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+slash+
+          '<path d="M5 12.55a11 11 0 0 1 14 0"/><path d="M8.5 16.05a6 6 0 0 1 7 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>';
+      }
+      var icon = document.createElement('div');
+      icon.id = 'oc-net-icon';
+      icon.style.cssText = 'position:fixed;top:8px;right:8px;z-index:99998;width:28px;height:28px;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:.9';
+      icon.innerHTML = wifiSvg(true);
+      document.body.appendChild(icon);
+      var toast = document.createElement('div');
+      toast.id = 'oc-net-toast';
+      toast.style.cssText = 'position:fixed;top:44px;right:8px;z-index:99999;max-width:72vw;padding:8px 12px;border-radius:8px;background:rgba(20,20,20,.92);color:#fff;font-size:13px;font-family:sans-serif;opacity:0;transform:translateY(-6px);transition:opacity .2s,transform .2s;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.4)';
+      document.body.appendChild(toast);
+      var toastTimer = null;
+      function showToast(msg){
+        toast.textContent = msg;
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(function(){ toast.style.opacity='0'; toast.style.transform='translateY(-6px)'; }, 2400);
+      }
+      window.__ocSetNetwork = function(online){
+        icon.innerHTML = wifiSvg(online);
+        showToast(online ? 'Интернет восстановлен' : 'Нет подключения к интернету (работаем локально)');
+      };
+    })();
+
+    })();
                     """.trimIndent()
                     evaluateJavascript(js, null)
+                    val netInit = isNetworkAvailable(getSystemService(ConnectivityManager::class.java))
+                    view?.evaluateJavascript("window.__ocSetNetwork && window.__ocSetNetwork($netInit)", null)
                 }
 
                 override fun onReceivedError(
@@ -1268,6 +1356,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        networkCallback?.let {
+            (getSystemService(ConnectivityManager::class.java))?.unregisterNetworkCallback(it)
+        }
         termuxManager.destroy()
         binding.webview.destroy()
         super.onDestroy()
