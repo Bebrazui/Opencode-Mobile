@@ -4,6 +4,9 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,10 +19,14 @@ import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.OnReceiveContentListener
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.app.NotificationCompat
 import ai.opencode.mobile.databinding.ActivityMainBinding
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
 
@@ -392,12 +399,17 @@ class MainActivity : AppCompatActivity() {
             throw err;
         });
     };
-    // Override notification icon to avoid external image load
+    // Override notification: убираем внешнюю иконку и перенаправляем
+    // в системное Android-уведомление (WebView Notification API не показывает
+    // реальные уведомления).
     var _origNotify = window.Notification;
     if (_origNotify && _origNotify.permission) {
         var _origNotifyCtr = window.Notification;
         window.Notification = function(title, opts) {
             if (opts && opts.icon) opts.icon = undefined;
+            if (window.AndroidBridge && window.AndroidBridge.notify) {
+                window.AndroidBridge.notify(title, (opts && opts.body) || '');
+            }
             return new _origNotifyCtr(title, opts);
         };
         window.Notification.permission = _origNotifyCtr.permission;
@@ -854,7 +866,106 @@ class MainActivity : AppCompatActivity() {
             }
 
             addJavascriptInterface(WebBridge(), "AndroidBridge")
+
+            // Перехват вставки изображений из буфера/клавиатуры (Gboard шлёт картинку
+            // через InputConnection.commitContent / OnReceiveContentListener; WebView
+            // это по умолчанию не поддерживает -> "приложение не поддерживает вставку").
+            (binding.webview as OCMobileWebView).onImageCommit = { uri -> onCommitImage(uri) }
+            ViewCompat.setOnReceiveContentListener(
+                binding.webview,
+                arrayOf("image/*"),
+                OnReceiveContentListener { _, contentInfo ->
+                    val clip = contentInfo.clip
+                    var handled = false
+                    if (clip != null) {
+                        for (i in 0 until clip.itemCount) {
+                            val uri = clip.getItemAt(i).uri
+                            if (uri != null) {
+                                onCommitImage(uri)
+                                handled = true
+                            }
+                        }
+                    }
+                    if (handled) null else contentInfo
+                }
+            )
         }
+    }
+
+    // Картинка пришла из клавиатуры/буфера -> читаем в data URL и синтезируем
+    // paste-событие с файлом, которое обработает штатный механизм вложений UI.
+    private fun onCommitImage(uri: Uri) {
+        val dataUrl = uriToDataUrl(uri) ?: return
+        runOnUiThread { dispatchClipboardImage(dataUrl) }
+    }
+
+    private fun uriToDataUrl(uri: Uri): String? {
+        return try {
+            val bitmap = contentResolver.openInputStream(uri)?.use {
+                android.graphics.BitmapFactory.decodeStream(it)
+            } ?: return null
+            val baos = java.io.ByteArrayOutputStream()
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
+            bitmap.recycle()
+            val b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+            "data:image/png;base64,$b64"
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun dispatchClipboardImage(dataUrl: String) {
+        val json = JSONObject.quote(dataUrl)
+        val js = """
+        (function(){
+          try {
+            var dataUrl = $json;
+            var parts = dataUrl.split(',');
+            var mime = (parts[0].match(/data:([^;]+)/)||[])[1] || 'image/png';
+            var bin = atob(parts[1]);
+            var arr = new Uint8Array(bin.length);
+            for (var j=0;j<bin.length;j++) arr[j]=bin.charCodeAt(j);
+            var file = new File([arr], 'clipboard-' + Date.now() + '.png', {type:mime});
+            var dt = new DataTransfer();
+            dt.items.add(file);
+            var target = document.activeElement || document.body;
+            var ne = new ClipboardEvent('paste', {clipboardData: dt, bubbles:true, cancelable:true});
+            target.dispatchEvent(ne);
+          } catch(e) {}
+        })();
+        """.trimIndent()
+        binding.webview.evaluateJavascript(js, null)
+    }
+
+    // Системное уведомление для opencode-уведомлений (response ready / error).
+    private fun showSystemNotification(title: String, description: String) {
+        val channelId = "opencode_task"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val mgr = getSystemService(NotificationManager::class.java)
+            if (mgr.getNotificationChannel(channelId) == null) {
+                val ch = NotificationChannel(
+                    channelId,
+                    "OpenCode Tasks",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply { enableVibration(true) }
+                mgr.createNotificationChannel(ch)
+            }
+        }
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pi = PendingIntent.getActivity(
+            this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notif = NotificationCompat.Builder(this, channelId)
+            .setContentTitle(title)
+            .setContentText(description)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(System.currentTimeMillis().toInt(), notif)
     }
 
     private inner class WebBridge {
@@ -868,6 +979,12 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun notifyTaskComplete(title: String, text: String) {
             termuxManager.sendTaskCompleteNotification(title, text)
+        }
+
+        // Системное уведомление из веб-UI (opencode Platform.notify -> window.Notification).
+        @JavascriptInterface
+        fun notify(title: String, description: String) {
+            this@MainActivity.showSystemNotification(title, description)
         }
 
         // Возвращает картинку из буфера обмена как data: URL (PNG/base64) либо "".

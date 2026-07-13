@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:background="#FF0D1117">
 
-    <WebView
+    <ai.opencode.mobile.OCMobileWebView
         android:id="@+id/webview"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
