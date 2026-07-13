@@ -346,10 +346,14 @@ class MainActivity : AppCompatActivity() {
                     if (host != "127.0.0.1" && host != "localhost") return null
                     if (r.method?.uppercase() == "POST") return null
                     val path = r.url?.path ?: return null
+                    // SSE-поток событий: WebView нативно рвёт долгие SSE (net::ERR_FAILED),
+                    // поэтому проксируем через Java-сокет, минуя сетевой стек WebView.
+                    if (path == "/global/event" || path == "/event" || path == "/api/event")
+                        return proxyEvent(urlStr, r.requestHeaders)
                     // /api/reference падает на сервере (сканирует папку вне alpine) -> 500.
                     // Отдаём пустой список, чтобы UI не ломался и модели отвечали.
                     if (path == "/api/reference") return referenceSafe(urlStr, r.requestHeaders)
-                    // API и SSE идут напрямую на локальный сервер (работает и офлайн).
+                    // остальной API идёт напрямую на локальный сервер (работает и офлайн).
                     if (!isUiPath(path)) return null
                     // UI: онлайн сервер проксирует к app.opencode.ai и кэшируется;
                     // офлайн отдаётся из кэша на диске.
@@ -900,6 +904,29 @@ class MainActivity : AppCompatActivity() {
 
     private fun referenceEmpty(): WebResourceResponse {
         return WebResourceResponse("application/json", "UTF-8", java.io.ByteArrayInputStream("[]".toByteArray()))
+    }
+
+    // SSE-поток событий (/global/event, /event, /api/event). Нативный SSE в WebView
+    // обрывается (net::ERR_FAILED), поэтому отдаём серверный поток напрямую через
+    // Java-сокет — WebView просто читает InputStream, минуя свой сетевой стек.
+    private fun proxyEvent(url: String, headers: Map<String, String>?): WebResourceResponse? {
+        return try {
+            val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("Accept", "text/event-stream")
+            conn.connectTimeout = 15000
+            conn.readTimeout = 0
+            headers?.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+            if (conn.responseCode != 200) {
+                conn.disconnect()
+                return null
+            }
+            val ctype = conn.contentType ?: "text/event-stream"
+            val mime = ctype.substringBefore(";").trim().lowercase().ifBlank { "text/event-stream" }
+            WebResourceResponse(mime, "UTF-8", conn.inputStream)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun fileResponse(file: java.io.File): WebResourceResponse {
