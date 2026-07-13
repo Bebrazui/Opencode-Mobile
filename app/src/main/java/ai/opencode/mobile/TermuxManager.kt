@@ -361,14 +361,17 @@ class TermuxManager(private val context: Context) {
             "-r $P/alpine -0 --link2symlink --sysvipc -L " +
             "/bin/sh -c 'export PATH=/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:$P/bin; " +
             "export HOME=/root; export TERM=xterm-256color; " +
-            "if [ ! -f /root/.packages_installed_v2 ]; then " +
+            "if [ ! -f /root/.packages_installed_v3 ]; then " +
             "  echo [ALPINE] Installing packages...; " +
             "  apk update --no-cache; " +
             "  apk add --no-cache bash || true; " +
             "  apk add --no-cache readline || true; " +
             "  apk add --no-cache libstdc++ || true; " +
             "  apk add --no-cache libgcc || true; " +
-            "  touch /root/.packages_installed_v2; " +
+            "  apk add --no-cache git || true; " +
+            "  apk add --no-cache diffutils || true; " +
+            "  apk add --no-cache nodejs || true; " +
+            "  touch /root/.packages_installed_v3; " +
             "fi; " +
             "echo [ALPINE] Starting opencode-server...; " +
             "chmod +x $P/bin/opencode-server 2>/dev/null; " +

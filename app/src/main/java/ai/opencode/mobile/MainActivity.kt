@@ -702,6 +702,36 @@ class MainActivity : AppCompatActivity() {
     });
     _ocDirObs.observe(document.body, {childList:true, subtree:true});
 
+    // === CLIPBOARD IMAGE PASTE (Android) ===
+    // WebView не отдаёт картинку из буфера обмена в clipboardData.files, поэтому
+    // берём её через AndroidBridge и синтезируем paste-событие с файлом, которое
+    // штатный обработчик вложений (attachments.ts) уже умеет обрабатывать.
+    document.addEventListener('paste', function(e) {
+      try {
+        var cd = e.clipboardData;
+        if (cd && cd.items) {
+          for (var i = 0; i < cd.items.length; i++) {
+            if (cd.items[i].kind === 'file') return;
+          }
+        }
+        if (!window.AndroidBridge || !window.AndroidBridge.readClipboardImage) return;
+        var dataUrl = window.AndroidBridge.readClipboardImage();
+        if (!dataUrl || typeof dataUrl !== 'string' || dataUrl.indexOf('data:image') !== 0) return;
+        var parts = dataUrl.split(',');
+        var mime = (parts[0].match(/data:([^;]+)/) || [])[1] || 'image/png';
+        var bin = atob(parts[1]);
+        var arr = new Uint8Array(bin.length);
+        for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
+        var file = new File([arr], 'clipboard-' + Date.now() + '.png', { type: mime });
+        var dt = new DataTransfer();
+        dt.items.add(file);
+        var ne = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.target && e.target.dispatchEvent) e.target.dispatchEvent(ne);
+      } catch (err) {}
+    }, true);
+
     // === NOTIFICATIONS ===
     var lastThinkingState = false;
     setInterval(function() {
@@ -838,6 +868,29 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun notifyTaskComplete(title: String, text: String) {
             termuxManager.sendTaskCompleteNotification(title, text)
+        }
+
+        // Возвращает картинку из буфера обмена как data: URL (PNG/base64) либо "".
+        @JavascriptInterface
+        fun readClipboardImage(): String {
+            return try {
+                val cm = this@MainActivity.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                    as? android.content.ClipboardManager
+                if (cm == null || !cm.hasPrimaryClip()) return ""
+                val clip = cm.primaryClip ?: return ""
+                if (clip.itemCount <= 0) return ""
+                val uri = clip.getItemAt(0).uri ?: return ""
+                val bitmap = contentResolver.openInputStream(uri)?.use { stream ->
+                    android.graphics.BitmapFactory.decodeStream(stream)
+                } ?: return ""
+                val baos = java.io.ByteArrayOutputStream()
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
+                bitmap.recycle()
+                val b64 = android.util.Base64.encodeToString(baos.toByteArray(), android.util.Base64.NO_WRAP)
+                "data:image/png;base64,$b64"
+            } catch (_: Exception) {
+                ""
+            }
         }
     }
 
