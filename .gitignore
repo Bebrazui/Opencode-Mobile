@@ -16,6 +16,9 @@
 
 # Log files
 *.log
+
+# Release signing keystore (keep local & secret)
+app/release-key.keystore
 app/src/main/assets/opencode-server
 app/src/main/assets/web-ui.zip
 app/src/main/assets/alpine.rootfs

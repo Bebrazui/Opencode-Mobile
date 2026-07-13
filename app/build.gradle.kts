@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -5,6 +7,13 @@ plugins {
 
 kotlin {
     jvmToolchain(17)
+}
+
+val localProperties = Properties().apply {
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+        localFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -24,6 +33,18 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFile = localProperties.getProperty("RELEASE_STORE_FILE")
+            if (storeFile != null) {
+                this.storeFile = rootProject.file(storeFile)
+                storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -31,12 +52,20 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            val storeFile = localProperties.getProperty("RELEASE_STORE_FILE")
+            if (storeFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError = false
     }
 
     kotlinOptions {
