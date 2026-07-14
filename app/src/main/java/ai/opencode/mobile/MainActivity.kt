@@ -391,6 +391,7 @@ class MainActivity : AppCompatActivity() {
             settings.domStorageEnabled = true
             settings.allowFileAccess = true
             settings.allowContentAccess = true
+            WebView.setWebContentsDebuggingEnabled(true)
             settings.mediaPlaybackRequiresUserGesture = false
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             settings.cacheMode = WebSettings.LOAD_CACHE_ELSE_NETWORK
